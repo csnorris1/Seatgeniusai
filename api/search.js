@@ -1,33 +1,17 @@
-const https = require('https');
-
-const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
-const TICKETMASTER_API_KEY = 'l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk';
-
-function fetchJSON(url) {
-  return new Promise((resolve) => {
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch(e) { resolve({}); }
-      });
-    }).on('error', () => resolve({}));
-  });
-}
-
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
 
-  const { action, q, performer_id, source, event_id } = req.query;
+  const { action, performer_id, event_id } = req.query;
+  const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
 
   try {
     if (action === 'events') {
       const realId = (performer_id || '').replace('sg_', '');
-      const data = await fetchJSON(
+      const response = await fetch(
         `https://api.seatgeek.com/2/events?performers.id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=20&sort=datetime_local.asc`
       );
+      const data = await response.json();
       const events = (data.events || []).map(e => ({
         id: `sg_${e.id}`,
         source: 'seatgeek',
@@ -45,10 +29,11 @@ module.exports = async function handler(req, res) {
 
     if (action === 'listings') {
       const realId = (event_id || '').replace('sg_', '');
-      const data = await fetchJSON(
+      const response = await fetch(
         `https://api.seatgeek.com/2/listings?event_id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=12`
       );
-      return res.status(200).json({ listings: data.listings || [], source: 'seatgeek' });
+      const data = await response.json();
+      return res.status(200).json({ listings: data.listings || [] });
     }
 
     return res.status(400).json({ error: 'Invalid action' });
