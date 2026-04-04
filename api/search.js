@@ -3,49 +3,51 @@ module.exports = async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   const { action, team, event_id } = req.query;
-  const TM_API_KEY = 'l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk';
+  const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
 
   try {
     if (action === 'events') {
       const response = await fetch(
-        `https://app.ticketmaster.com/discovery/v2/events.json?keyword=${encodeURIComponent(team)}&classificationName=Baseball&segmentName=Sports&size=20&sort=date,asc&apikey=${TM_API_KEY}`
+        `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${new Date().toISOString().split('T')[0]}&client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
-      const events = (data._embedded?.events || []).map(e => {
-        const venue = e._embedded?.venues?.[0];
-        const priceMin = e.priceRanges?.[0]?.min;
-        return {
-          id: e.id,
-          source: 'ticketmaster',
-          title: e.name,
-          short_title: e.name,
-          datetime_local: e.dates?.start?.localDate + (e.dates?.start?.localTime ? 'T' + e.dates?.start?.localTime : ''),
-          venue: venue?.name,
-          city: venue?.city?.name,
-          state: venue?.state?.stateCode,
-          lowest_price: priceMin ? Math.round(priceMin) : null,
-          url: e.url
-        };
-      });
+      const events = (data.events || []).map(e => ({
+        id: e.id,
+        source: 'seatgeek',
+        title: e.title,
+        short_title: e.short_title,
+        datetime_local: e.datetime_local,
+        venue: e.venue?.name,
+        city: e.venue?.city,
+        state: e.venue?.state,
+        lowest_price: e.stats?.lowest_price || null,
+        url: e.url
+      }));
       return res.status(200).json({ events });
     }
 
     if (action === 'listings') {
       const response = await fetch(
-        `https://app.ticketmaster.com/discovery/v2/events/${event_id}.json?apikey=${TM_API_KEY}`
+        `https://api.seatgeek.com/2/events/${event_id}?client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
+      const stats = data.stats || {};
+      const listings = [];
 
-      const listings = (data.priceRanges || []).map(pr => ({
-        section: pr.type || 'standard',
-        price: Math.round(pr.min),
-        max_price: Math.round(pr.max),
-        source: 'ticketmaster'
-      }));
+      if (stats.lowest_price) {
+        listings.push({ section: 'Upper Level / Budget', price: stats.lowest_price, max_price: stats.median_price || stats.lowest_price, source: 'seatgeek' });
+      }
+      if (stats.median_price) {
+        listings.push({ section: 'Mid-Range', price: stats.median_price, max_price: stats.average_price || stats.median_price, source: 'seatgeek' });
+      }
+      if (stats.highest_price) {
+        listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'seatgeek' });
+      }
 
-      const buyUrl = data.url || null;
-
-      return res.status(200).json({ listings, buy_url: buyUrl });
+      return res.status(200).json({
+        listings,
+        buy_url: data.url || null
+      });
     }
 
     return res.status(400).json({ error: 'Invalid action' });

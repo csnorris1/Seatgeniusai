@@ -15,17 +15,17 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 **Frontend:** Single-page React 19 app (Vite 8, plain JSX, no TypeScript, no router). All UI lives in `src/App.jsx` — team selection, event list, ticket listings, and AI analysis are rendered as state-driven views within one component. Styles are embedded as a template string in App.jsx (not in CSS files).
 
-**Backend:** `api/search.js` is an AWS Lambda handler (CommonJS `module.exports`, not ESM) deployed behind API Gateway at a hardcoded URL in `App.jsx` (`AWS_URL`). It proxies two Ticketmaster Discovery API calls:
-- `action=events&team=<name>` — search MLB events by team name
-- `action=listings&event_id=<id>` — get price ranges and buy URL for a specific event
+**Backend:** `api/search.js` is an AWS Lambda handler (CommonJS `module.exports`, not ESM) deployed behind API Gateway at a hardcoded URL in `App.jsx` (`AWS_URL`). It proxies two SeatGeek API calls:
+- `action=events&team=<name>` — search MLB events by team name keyword
+- `action=listings&event_id=<id>` — get price tiers (from event stats) and buy URL for a specific event
 
 **AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude.
 
 ## API Keys & URLs
 
 - AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
-- Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk
-- SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (keep for reference)
+- Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk (expired — needs renewal)
+- SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (active, used for events + listings)
 - Anthropic model: claude-sonnet-4-20250514
 
 ## Product Roadmap
@@ -44,7 +44,8 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 ## Known Issues
 
-- Ticketmaster free tier doesn't always return price ranges for all games
+- Ticketmaster API key expired; switched to SeatGeek for schedule data
+- SeatGeek free tier doesn't always return price stats for all games
 - SeatGenius.net domain not yet pointed to Vercel
 - Need affiliate program approval for resale pricing data
 
@@ -52,4 +53,9 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 - ESLint rule: unused vars are errors, except those starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`)
 - The Lambda uses `fetch` (Node 18+ built-in), not `https` or axios
-- Ticketmaster event IDs are used as-is (no prefixing); SeatGeek is no longer used
+- SeatGeek event IDs are used as-is (no prefixing)
+
+## CI / Monitoring
+
+- `.github/workflows/site-monitor.yml` — runs hourly, checks frontend (Vercel) and both API endpoints
+- Can also be triggered manually via `workflow_dispatch`

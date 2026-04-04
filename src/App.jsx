@@ -193,7 +193,7 @@ export default function SeatGenius() {
             content: `You are an expert ticket deal analyzer. A user wants the best deal for:
 "${selectedEvent.title}" on ${formatDate(selectedEvent.datetime_local)} at ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}.
 
-Here are current ticket price ranges from Ticketmaster:
+Here are current ticket price ranges from SeatGeek:
 
 ${listingText}
 
@@ -326,14 +326,14 @@ Be direct and opinionated. Bold the key insights.`
               {loadingListings ? (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">Pulling live ticket prices from Ticketmaster...</span>
+                  <span className="loading-text">Pulling live ticket prices from SeatGeek...</span>
                 </div>
               ) : (
                 <>
                   <div className="listings-box">
                     {listings.length > 0 ? (
                       <>
-                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · via Ticketmaster</div>
+                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · via SeatGeek</div>
                         {listings.map((l, i) => (
                           <div className="listing-row" key={i}>
                             <div className="listing-section">{l.section}</div>
@@ -345,7 +345,7 @@ Be direct and opinionated. Bold the key insights.`
                         ))}
                         {buyUrl && (
                           <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn">
-                            Buy on Ticketmaster →
+                            Buy on SeatGeek →
                           </a>
                         )}
                       </>
