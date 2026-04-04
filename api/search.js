@@ -2,38 +2,50 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
 
-  const { action, performer_id, event_id } = req.query;
-  const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
+  const { action, team, event_id } = req.query;
+  const TM_API_KEY = 'l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk';
 
   try {
     if (action === 'events') {
-      const realId = (performer_id || '').replace('sg_', '');
       const response = await fetch(
-        `https://api.seatgeek.com/2/events?performers.id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=20&sort=datetime_local.asc`
+        `https://app.ticketmaster.com/discovery/v2/events.json?keyword=${encodeURIComponent(team)}&classificationName=Baseball&segmentName=Sports&size=20&sort=date,asc&apikey=${TM_API_KEY}`
       );
       const data = await response.json();
-      const events = (data.events || []).map(e => ({
-        id: `sg_${e.id}`,
-        source: 'seatgeek',
-        title: e.title,
-        short_title: e.short_title,
-        datetime_local: e.datetime_local,
-        venue: e.venue?.name,
-        city: e.venue?.city,
-        state: e.venue?.state,
-        lowest_price: e.stats?.lowest_price,
-        url: e.url
-      }));
+      const events = (data._embedded?.events || []).map(e => {
+        const venue = e._embedded?.venues?.[0];
+        const priceMin = e.priceRanges?.[0]?.min;
+        return {
+          id: e.id,
+          source: 'ticketmaster',
+          title: e.name,
+          short_title: e.name,
+          datetime_local: e.dates?.start?.localDate + (e.dates?.start?.localTime ? 'T' + e.dates?.start?.localTime : ''),
+          venue: venue?.name,
+          city: venue?.city?.name,
+          state: venue?.state?.stateCode,
+          lowest_price: priceMin ? Math.round(priceMin) : null,
+          url: e.url
+        };
+      });
       return res.status(200).json({ events });
     }
 
     if (action === 'listings') {
-      const realId = (event_id || '').replace('sg_', '');
       const response = await fetch(
-        `https://api.seatgeek.com/2/listings?event_id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=12`
+        `https://app.ticketmaster.com/discovery/v2/events/${event_id}.json?apikey=${TM_API_KEY}`
       );
       const data = await response.json();
-      return res.status(200).json({ listings: data.listings || [] });
+
+      const listings = (data.priceRanges || []).map(pr => ({
+        section: pr.type || 'standard',
+        price: Math.round(pr.min),
+        max_price: Math.round(pr.max),
+        source: 'ticketmaster'
+      }));
+
+      const buyUrl = data.url || null;
+
+      return res.status(200).json({ listings, buy_url: buyUrl });
     }
 
     return res.status(400).json({ error: 'Invalid action' });
