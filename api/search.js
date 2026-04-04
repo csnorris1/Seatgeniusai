@@ -23,33 +23,37 @@ module.exports = async function handler(req, res) {
   const { action, q, performer_id, source, event_id } = req.query;
 
   try {
-    if (action === 'performers') {
-      const [sgData, tmData] = await Promise.all([
-        fetchJSON(`https://api.seatgeek.com/2/performers?q=${encodeURIComponent(q)}&client_id=${SEATGEEK_CLIENT_ID}&per_page=6`),
-        fetchJSON(`https://app.ticketmaster.com/discovery/v2/attractions.json?keyword=${encodeURIComponent(q)}&apikey=${TICKETMASTER_API_KEY}&size=6`)
-      ]);
-
-      const sgPerformers = (sgData.performers || []).map(p => ({
-        id: `sg_${p.id}`, source: 'seatgeek', name: p.name,
-        type: p.type, image: p.image, event_count: p.stats?.event_count || 0
+    if (action === 'events') {
+      const realId = (performer_id || '').replace('sg_', '');
+      const data = await fetchJSON(
+        `https://api.seatgeek.com/2/events?performers.id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=20&sort=datetime_local.asc`
+      );
+      const events = (data.events || []).map(e => ({
+        id: `sg_${e.id}`,
+        source: 'seatgeek',
+        title: e.title,
+        short_title: e.short_title,
+        datetime_local: e.datetime_local,
+        venue: e.venue?.name,
+        city: e.venue?.city,
+        state: e.venue?.state,
+        lowest_price: e.stats?.lowest_price,
+        url: e.url
       }));
-
-      const tmPerformers = ((tmData._embedded?.attractions) || []).map(p => ({
-        id: `tm_${p.id}`, source: 'ticketmaster', name: p.name,
-        type: p.classifications?.[0]?.segment?.name || 'event',
-        image: p.images?.[0]?.url, event_count: p.upcomingEvents?.ticketmaster || 0
-      }));
-
-      const seen = new Set();
-      const all = [...sgPerformers, ...tmPerformers].filter(p => {
-        const key = p.name.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key); return true;
-      });
-
-      return res.status(200).json({ performers: all });
+      return res.status(200).json({ events });
     }
 
-    if (action === 'events') {
-      const src = source || 'seatgeek';
-      if (
+    if (action === 'listings') {
+      const realId = (event_id || '').replace('sg_', '');
+      const data = await fetchJSON(
+        `https://api.seatgeek.com/2/listings?event_id=${realId}&client_id=${SEATGEEK_CLIENT_ID}&per_page=12`
+      );
+      return res.status(200).json({ listings: data.listings || [], source: 'seatgeek' });
+    }
+
+    return res.status(400).json({ error: 'Invalid action' });
+
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
