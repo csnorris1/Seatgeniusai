@@ -21,6 +21,33 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 **AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude.
 
+## API Keys & URLs
+
+- AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
+- Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk
+- SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (keep for reference)
+- Anthropic model: claude-sonnet-4-20250514
+
+## Product Roadmap
+
+- Current: MLB only, Ticketmaster data for schedule + prices
+- Next: Apply to affiliate programs (SeatGeek, StubHub, Vivid Seats) to get resale data
+- Goal: Show side-by-side primary vs secondary market prices so users find the true best deal
+- Future: Expand to NBA, NFL, concerts
+
+## Deployment
+
+- Frontend: Vercel (seatgeniusai.vercel.app), auto-deploys on git push to main
+- Backend: AWS Lambda + API Gateway
+- Domain: SeatGenius.net (registered on Squarespace, not yet connected)
+- Repo: github.com/csnorris1/Seatgeniusai
+
+## Known Issues
+
+- Ticketmaster free tier doesn't always return price ranges for all games
+- SeatGenius.net domain not yet pointed to Vercel
+- Need affiliate program approval for resale pricing data
+
 ## Key Conventions
 
 - ESLint rule: unused vars are errors, except those starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`)
