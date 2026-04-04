@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
+
 const MLB_TEAMS = [
   { name: "Arizona Diamondbacks", short: "D-backs", sg_id: 1, city: "Phoenix" },
   { name: "Atlanta Braves", short: "Braves", sg_id: 2, city: "Atlanta" },
@@ -138,7 +140,7 @@ export default function SeatGenius() {
     setError(null);
     setLoadingEvents(true);
     try {
-      const res = await fetch(`/api/search?action=events&performer_id=sg_${team.sg_id}&source=seatgeek`);
+      const res = await fetch(`${AWS_URL}/search?action=events&performer_id=sg_${team.sg_id}&source=seatgeek`);
       const data = await res.json();
       setEvents(data.events || []);
     } catch {
@@ -154,7 +156,7 @@ export default function SeatGenius() {
     setResult(null);
     setLoadingListings(true);
     try {
-      const res = await fetch(`/api/search?action=listings&event_id=${event.id}&source=${event.source}`);
+      const res = await fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}&source=${event.source}`);
       const data = await res.json();
       setListings(data.listings || []);
     } catch {
@@ -240,7 +242,6 @@ Be direct and opinionated. Bold the winner and key insights.`
             <p className="subtitle">Pick your team. Find the best ticket deal for any game this season.</p>
           </div>
 
-          {/* STEP 1 — Pick a team */}
           {!selectedTeam && (
             <>
               <input
@@ -261,7 +262,6 @@ Be direct and opinionated. Bold the winner and key insights.`
             </>
           )}
 
-          {/* STEP 2 — Pick a game */}
           {selectedTeam && !selectedEvent && (
             <>
               <div className="selected-bar">
@@ -303,7 +303,6 @@ Be direct and opinionated. Bold the winner and key insights.`
             </>
           )}
 
-          {/* STEP 3 — Listings + AI Analysis */}
           {selectedEvent && (
             <>
               <div className="selected-bar">
