@@ -3,36 +3,36 @@ import { useState } from "react";
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
 const MLB_TEAMS = [
-  { name: "Arizona Diamondbacks", short: "D-backs", sg_id: 1, city: "Phoenix" },
-  { name: "Atlanta Braves", short: "Braves", sg_id: 2, city: "Atlanta" },
-  { name: "Baltimore Orioles", short: "Orioles", sg_id: 3, city: "Baltimore" },
-  { name: "Boston Red Sox", short: "Red Sox", sg_id: 4, city: "Boston" },
-  { name: "Chicago Cubs", short: "Cubs", sg_id: 11, city: "Chicago" },
-  { name: "Chicago White Sox", short: "White Sox", sg_id: 12, city: "Chicago" },
-  { name: "Cincinnati Reds", short: "Reds", sg_id: 13, city: "Cincinnati" },
-  { name: "Cleveland Guardians", short: "Guardians", sg_id: 6, city: "Cleveland" },
-  { name: "Colorado Rockies", short: "Rockies", sg_id: 14, city: "Denver" },
-  { name: "Detroit Tigers", short: "Tigers", sg_id: 7, city: "Detroit" },
-  { name: "Houston Astros", short: "Astros", sg_id: 15, city: "Houston" },
-  { name: "Kansas City Royals", short: "Royals", sg_id: 16, city: "Kansas City" },
-  { name: "Los Angeles Angels", short: "Angels", sg_id: 17, city: "Anaheim" },
-  { name: "Los Angeles Dodgers", short: "Dodgers", sg_id: 18, city: "Los Angeles" },
-  { name: "Miami Marlins", short: "Marlins", sg_id: 19, city: "Miami" },
-  { name: "Milwaukee Brewers", short: "Brewers", sg_id: 20, city: "Milwaukee" },
-  { name: "Minnesota Twins", short: "Twins", sg_id: 8, city: "Minneapolis" },
-  { name: "New York Mets", short: "Mets", sg_id: 21, city: "New York" },
-  { name: "New York Yankees", short: "Yankees", sg_id: 9, city: "New York" },
-  { name: "Oakland Athletics", short: "Athletics", sg_id: 22, city: "Oakland" },
-  { name: "Philadelphia Phillies", short: "Phillies", sg_id: 23, city: "Philadelphia" },
-  { name: "Pittsburgh Pirates", short: "Pirates", sg_id: 24, city: "Pittsburgh" },
-  { name: "San Diego Padres", short: "Padres", sg_id: 25, city: "San Diego" },
-  { name: "San Francisco Giants", short: "Giants", sg_id: 26, city: "San Francisco" },
-  { name: "Seattle Mariners", short: "Mariners", sg_id: 27, city: "Seattle" },
-  { name: "St. Louis Cardinals", short: "Cardinals", sg_id: 28, city: "St. Louis" },
-  { name: "Tampa Bay Rays", short: "Rays", sg_id: 5, city: "St. Petersburg" },
-  { name: "Texas Rangers", short: "Rangers", sg_id: 29, city: "Arlington" },
-  { name: "Toronto Blue Jays", short: "Blue Jays", sg_id: 30, city: "Toronto" },
-  { name: "Washington Nationals", short: "Nationals", sg_id: 31, city: "Washington" },
+  { name: "Arizona Diamondbacks", short: "D-backs", city: "Phoenix" },
+  { name: "Atlanta Braves", short: "Braves", city: "Atlanta" },
+  { name: "Baltimore Orioles", short: "Orioles", city: "Baltimore" },
+  { name: "Boston Red Sox", short: "Red Sox", city: "Boston" },
+  { name: "Chicago Cubs", short: "Cubs", city: "Chicago" },
+  { name: "Chicago White Sox", short: "White Sox", city: "Chicago" },
+  { name: "Cincinnati Reds", short: "Reds", city: "Cincinnati" },
+  { name: "Cleveland Guardians", short: "Guardians", city: "Cleveland" },
+  { name: "Colorado Rockies", short: "Rockies", city: "Denver" },
+  { name: "Detroit Tigers", short: "Tigers", city: "Detroit" },
+  { name: "Houston Astros", short: "Astros", city: "Houston" },
+  { name: "Kansas City Royals", short: "Royals", city: "Kansas City" },
+  { name: "Los Angeles Angels", short: "Angels", city: "Anaheim" },
+  { name: "Los Angeles Dodgers", short: "Dodgers", city: "Los Angeles" },
+  { name: "Miami Marlins", short: "Marlins", city: "Miami" },
+  { name: "Milwaukee Brewers", short: "Brewers", city: "Milwaukee" },
+  { name: "Minnesota Twins", short: "Twins", city: "Minneapolis" },
+  { name: "New York Mets", short: "Mets", city: "New York" },
+  { name: "New York Yankees", short: "Yankees", city: "New York" },
+  { name: "Oakland Athletics", short: "Athletics", city: "Oakland" },
+  { name: "Philadelphia Phillies", short: "Phillies", city: "Philadelphia" },
+  { name: "Pittsburgh Pirates", short: "Pirates", city: "Pittsburgh" },
+  { name: "San Diego Padres", short: "Padres", city: "San Diego" },
+  { name: "San Francisco Giants", short: "Giants", city: "San Francisco" },
+  { name: "Seattle Mariners", short: "Mariners", city: "Seattle" },
+  { name: "St. Louis Cardinals", short: "Cardinals", city: "St. Louis" },
+  { name: "Tampa Bay Rays", short: "Rays", city: "St. Petersburg" },
+  { name: "Texas Rangers", short: "Rangers", city: "Arlington" },
+  { name: "Toronto Blue Jays", short: "Blue Jays", city: "Toronto" },
+  { name: "Washington Nationals", short: "Nationals", city: "Washington" },
 ];
 
 const styles = `
@@ -79,8 +79,10 @@ const styles = `
   .listing-row:last-child { border-bottom: none; padding-bottom: 0; }
   .listing-section { font-size: 13px; color: rgba(240,237,230,0.7); flex: 1; }
   .listing-price { font-size: 14px; font-weight: 600; color: #f0ede6; }
-  .listing-source { font-size: 11px; color: rgba(240,237,230,0.3); }
+  .listing-range { font-size: 11px; color: rgba(240,237,230,0.3); }
   .no-listings { font-size: 14px; color: rgba(240,237,230,0.3); font-style: italic; text-align: center; padding: 12px 0; }
+  .buy-btn { display: block; text-align: center; margin-top: 12px; padding: 10px; background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); border-radius: 6px; color: #f5a623; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
+  .buy-btn:hover { background: rgba(245,166,35,0.2); }
   .analyze-btn { width: 100%; padding: 18px; background: #f5a623; color: #0a0a0a; border: none; border-radius: 6px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; cursor: pointer; transition: all 0.2s; }
   .analyze-btn:hover:not(:disabled) { background: #ffc947; transform: translateY(-1px); }
   .analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
@@ -120,6 +122,7 @@ export default function SeatGenius() {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [listings, setListings] = useState([]);
+  const [buyUrl, setBuyUrl] = useState(null);
   const [loadingListings, setLoadingListings] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
@@ -140,7 +143,7 @@ export default function SeatGenius() {
     setError(null);
     setLoadingEvents(true);
     try {
-      const res = await fetch(`${AWS_URL}/search?action=events&performer_id=sg_${team.sg_id}&source=seatgeek`);
+      const res = await fetch(`${AWS_URL}/search?action=events&team=${encodeURIComponent(team.name)}`);
       const data = await res.json();
       setEvents(data.events || []);
     } catch {
@@ -153,12 +156,14 @@ export default function SeatGenius() {
   const selectEvent = async (event) => {
     setSelectedEvent(event);
     setListings([]);
+    setBuyUrl(null);
     setResult(null);
     setLoadingListings(true);
     try {
-      const res = await fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}&source=${event.source}`);
+      const res = await fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`);
       const data = await res.json();
       setListings(data.listings || []);
+      setBuyUrl(data.buy_url || null);
     } catch {
       setError("Couldn't load listings. Try again.");
     } finally {
@@ -172,8 +177,8 @@ export default function SeatGenius() {
     setResult(null);
     setError(null);
 
-    const listingText = listings.slice(0, 12).map(l =>
-      `Section ${l.section || "?"}, Row ${l.row || "?"}, ${l.quantity || 1} ticket(s) — $${l.price} each — ${l.type || "resale"}`
+    const listingText = listings.map(l =>
+      `${l.section} — from $${l.price}${l.max_price ? ` to $${l.max_price}` : ''} — ${l.source}`
     ).join("\n");
 
     try {
@@ -188,17 +193,17 @@ export default function SeatGenius() {
             content: `You are an expert ticket deal analyzer. A user wants the best deal for:
 "${selectedEvent.title}" on ${formatDate(selectedEvent.datetime_local)} at ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}.
 
-Here are current listings pulled live:
+Here are current ticket price ranges from Ticketmaster:
 
 ${listingText}
 
 Analyze these and:
-1. **Identify the best overall deal** — price, seat quality, quantity flexibility
-2. **Rank the top listings** from best to worst value with a short reason for each
-3. **Flag any red flags** (overpriced, bad location, limited quantity)
+1. **Identify the best value ticket option** — balancing price and experience
+2. **Explain what each price tier gets you** (budget, mid-range, premium)
+3. **Give a buying recommendation** — when to buy, what to avoid
 4. **Give a final verdict** in 1-2 punchy sentences
 
-Be direct and opinionated. Bold the winner and key insights.`
+Be direct and opinionated. Bold the key insights.`
           }]
         })
       });
@@ -227,6 +232,7 @@ Be direct and opinionated. Bold the winner and key insights.`
     setListings([]);
     setResult(null);
     setError(null);
+    setBuyUrl(null);
   };
 
   return (
@@ -320,33 +326,31 @@ Be direct and opinionated. Bold the winner and key insights.`
               {loadingListings ? (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">Pulling live ticket listings...</span>
+                  <span className="loading-text">Pulling live ticket prices from Ticketmaster...</span>
                 </div>
               ) : (
                 <>
                   <div className="listings-box">
                     {listings.length > 0 ? (
                       <>
-                        <div className="listings-label">{listings.length} listings found</div>
-                        {listings.slice(0, 8).map((l, i) => (
+                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · via Ticketmaster</div>
+                        {listings.map((l, i) => (
                           <div className="listing-row" key={i}>
-                            <div className="listing-section">
-                              Sec {l.section || "?"} · Row {l.row || "?"} · {l.quantity || 1} ticket{l.quantity !== 1 ? "s" : ""}
-                            </div>
+                            <div className="listing-section">{l.section}</div>
                             <div>
-                              <div className="listing-price">${l.price}</div>
-                              <div className="listing-source">{l.type || "resale"}</div>
+                              <div className="listing-price">${l.price}{l.max_price && l.max_price !== l.price ? ` – $${l.max_price}` : ''}</div>
+                              <div className="listing-range">per ticket</div>
                             </div>
                           </div>
                         ))}
-                        {listings.length > 8 && (
-                          <div style={{ fontSize: 12, color: "rgba(240,237,230,0.25)", paddingTop: 12, textAlign: "center" }}>
-                            +{listings.length - 8} more listings included in analysis
-                          </div>
+                        {buyUrl && (
+                          <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn">
+                            Buy on Ticketmaster →
+                          </a>
                         )}
                       </>
                     ) : (
-                      <div className="no-listings">No resale listings available for this game yet.</div>
+                      <div className="no-listings">No ticket prices available yet for this game.</div>
                     )}
                   </div>
 
@@ -357,7 +361,7 @@ Be direct and opinionated. Bold the winner and key insights.`
                     onClick={handleAnalyze}
                     disabled={!listings.length || analyzing}
                   >
-                    {analyzing ? "Analyzing..." : listings.length ? `Find Best Deal — ${listings.length} Listings →` : "No Listings Yet"}
+                    {analyzing ? "Analyzing..." : listings.length ? `Get AI Deal Analysis →` : "No Listings Yet"}
                   </button>
                 </>
               )}
@@ -365,14 +369,14 @@ Be direct and opinionated. Bold the winner and key insights.`
               {analyzing && (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">AI is comparing listings and finding the best deal…</span>
+                  <span className="loading-text">AI is analyzing ticket prices and finding the best deal…</span>
                 </div>
               )}
 
               {result && (
                 <div className="results">
                   <div className="results-header">
-                    <span className="results-title">Best Deal Found</span>
+                    <span className="results-title">AI Analysis</span>
                     <div className="divider" />
                   </div>
                   <div className="winner-badge">⚡ AI Verdict</div>
