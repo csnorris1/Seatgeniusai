@@ -30,3 +30,11 @@ jobs:
             --function-name seatgenius-search \
             --zip-file fileb://function.zip \
             --region us-east-2
+          aws lambda wait function-updated \
+            --function-name seatgenius-search \
+            --region us-east-2
+          aws lambda update-function-configuration \
+            --function-name seatgenius-search \
+            --handler search.handler \
+            --runtime nodejs20.x \
+            --region us-east-2

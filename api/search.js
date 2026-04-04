@@ -1,14 +1,27 @@
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'application/json');
-
-  const { action, team, event_id } = req.query;
+exports.handler = async (event) => {
+  const params = event.queryStringParameters || {};
+  const { action, team, event_id } = params;
   const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
+
+  const respond = (statusCode, body) => ({
+    statusCode,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (event.httpMethod === 'OPTIONS') {
+    return respond(200, {});
+  }
 
   try {
     if (action === 'events') {
+      const today = new Date().toISOString().split('T')[0];
       const response = await fetch(
-        `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${new Date().toISOString().split('T')[0]}&client_id=${SEATGEEK_CLIENT_ID}`
+        `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
       const events = (data.events || []).map(e => ({
@@ -23,7 +36,7 @@ module.exports = async function handler(req, res) {
         lowest_price: e.stats?.lowest_price || null,
         url: e.url
       }));
-      return res.status(200).json({ events });
+      return respond(200, { events });
     }
 
     if (action === 'listings') {
@@ -44,15 +57,12 @@ module.exports = async function handler(req, res) {
         listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'seatgeek' });
       }
 
-      return res.status(200).json({
-        listings,
-        buy_url: data.url || null
-      });
+      return respond(200, { listings, buy_url: data.url || null });
     }
 
-    return res.status(400).json({ error: 'Invalid action' });
+    return respond(400, { error: 'Invalid action' });
 
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return respond(500, { error: err.message });
   }
 };
