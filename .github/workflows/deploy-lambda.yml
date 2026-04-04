@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'api/search.js'
+      - 'api/**'
 
   workflow_dispatch:
 
@@ -36,5 +36,21 @@ jobs:
           aws lambda update-function-configuration \
             --function-name seatgenius-search \
             --handler search.handler \
+            --runtime nodejs20.x \
+            --region us-east-2
+
+      - name: Package and deploy monitor Lambda
+        run: |
+          zip -j monitor.zip api/monitor.js
+          aws lambda update-function-code \
+            --function-name seatgenius-monitor \
+            --zip-file fileb://monitor.zip \
+            --region us-east-2
+          aws lambda wait function-updated \
+            --function-name seatgenius-monitor \
+            --region us-east-2
+          aws lambda update-function-configuration \
+            --function-name seatgenius-monitor \
+            --handler monitor.handler \
             --runtime nodejs20.x \
             --region us-east-2

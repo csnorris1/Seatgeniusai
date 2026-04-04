@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -100,6 +100,21 @@ const styles = `
   .analysis-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 28px 32px; font-size: 15px; line-height: 1.75; color: rgba(240,237,230,0.85); white-space: pre-wrap; }
   .analysis-box strong { color: #f5a623; font-weight: 600; }
   .error { background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.2); border-radius: 8px; padding: 16px 20px; color: rgba(255,150,150,0.9); font-size: 14px; margin-top: 16px; }
+  .deals-section { margin-bottom: 40px; }
+  .deals-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .deal-card { padding: 16px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; display: flex; align-items: center; gap: 14px; transition: all 0.15s; }
+  .deal-card:hover { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.2); }
+  .deal-badge { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; white-space: nowrap; }
+  .deal-badge.great { background: rgba(80,200,120,0.15); color: #50c878; border: 1px solid rgba(80,200,120,0.3); }
+  .deal-badge.good { background: rgba(245,166,35,0.12); color: #f5a623; border: 1px solid rgba(245,166,35,0.3); }
+  .deal-badge.fair { background: rgba(240,237,230,0.06); color: rgba(240,237,230,0.5); border: 1px solid rgba(240,237,230,0.12); }
+  .deal-info { flex: 1; min-width: 0; }
+  .deal-title { font-size: 13px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .deal-meta { font-size: 11px; color: rgba(240,237,230,0.35); margin-top: 2px; }
+  .deal-prices { text-align: right; white-space: nowrap; }
+  .deal-low { font-size: 15px; font-weight: 700; color: #50c878; }
+  .deal-avg { font-size: 11px; color: rgba(240,237,230,0.3); margin-top: 1px; }
+  .deal-discount { font-size: 11px; font-weight: 600; color: #50c878; }
 `;
 
 function formatDate(dateStr) {
@@ -128,6 +143,17 @@ export default function SeatGenius() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [deals, setDeals] = useState([]);
+  const [loadingDeals, setLoadingDeals] = useState(false);
+
+  useEffect(() => {
+    setLoadingDeals(true);
+    fetch(`${AWS_URL}/monitor?action=monitor`)
+      .then(res => res.json())
+      .then(data => setDeals((data.deals || []).slice(0, 5)))
+      .catch(() => {})
+      .finally(() => setLoadingDeals(false));
+  }, []);
 
   const filteredTeams = MLB_TEAMS.filter(t =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -251,6 +277,34 @@ Be direct and opinionated. Bold the key insights.`
 
           {!selectedTeam && (
             <>
+              {!search && deals.length > 0 && (
+                <div className="deals-section">
+                  <div className="section-label">Hot Deals Right Now</div>
+                  <div className="deals-grid">
+                    {deals.map(d => (
+                      <div className="deal-card" key={d.id}>
+                        <div className={`deal-badge ${d.deal_rating}`}>{d.deal_rating}</div>
+                        <div className="deal-info">
+                          <div className="deal-title">{d.title}</div>
+                          <div className="deal-meta">{formatDate(d.datetime_local)} · {d.venue}</div>
+                        </div>
+                        <div className="deal-prices">
+                          <div className="deal-low">${d.lowest_price}</div>
+                          <div className="deal-avg">avg ${d.average_price}</div>
+                          <div className="deal-discount">{d.discount_pct}% below avg</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {loadingDeals && !deals.length && (
+                <div className="loading" style={{ marginBottom: 24 }}>
+                  <div className="spinner" />
+                  <span className="loading-text">Finding hot deals...</span>
+                </div>
+              )}
+
               <input
                 className="search-input"
                 placeholder="Search a team — Cubs, Yankees, Dodgers..."
