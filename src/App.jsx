@@ -73,6 +73,7 @@ const styles = `
   .event-title { font-size: 14px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .event-venue { font-size: 12px; color: rgba(240,237,230,0.35); margin-top: 2px; }
   .event-price-tag { font-size: 13px; font-weight: 600; color: rgba(240,237,230,0.5); white-space: nowrap; }
+  .event-price-tag.tbd { color: rgba(240,237,230,0.25); font-style: italic; font-weight: 400; }
   .listings-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
   .listings-label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: rgba(240,237,230,0.35); margin-bottom: 14px; }
   .listing-row { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 12px; }
@@ -298,9 +299,9 @@ Be direct and opinionated. Bold the key insights.`
                         <div className="event-title">{ev.short_title || ev.title}</div>
                         <div className="event-venue">{ev.venue} · {ev.city}, {ev.state}</div>
                       </div>
-                      {ev.lowest_price && (
-                        <div className="event-price-tag">from ${ev.lowest_price}</div>
-                      )}
+                      <div className={`event-price-tag${!ev.lowest_price && !ev.average_price ? ' tbd' : ''}`}>
+                        {ev.lowest_price ? `from $${ev.lowest_price}` : ev.average_price ? `~$${ev.average_price}` : 'Prices TBD'}
+                      </div>
                     </div>
                   ))}
                 </>

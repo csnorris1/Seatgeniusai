@@ -33,7 +33,9 @@ exports.handler = async (event) => {
         venue: e.venue?.name,
         city: e.venue?.city,
         state: e.venue?.state,
-        lowest_price: e.stats?.lowest_price || null,
+        lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
+        average_price: e.stats?.average_price || null,
+        highest_price: e.stats?.highest_price || null,
         url: e.url
       }));
       return respond(200, { events });
