@@ -1,6 +1,37 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 
-const API_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
+const MLB_TEAMS = [
+  { name: "Arizona Diamondbacks", short: "D-backs", sg_id: 1, city: "Phoenix" },
+  { name: "Atlanta Braves", short: "Braves", sg_id: 2, city: "Atlanta" },
+  { name: "Baltimore Orioles", short: "Orioles", sg_id: 3, city: "Baltimore" },
+  { name: "Boston Red Sox", short: "Red Sox", sg_id: 4, city: "Boston" },
+  { name: "Chicago Cubs", short: "Cubs", sg_id: 11, city: "Chicago" },
+  { name: "Chicago White Sox", short: "White Sox", sg_id: 12, city: "Chicago" },
+  { name: "Cincinnati Reds", short: "Reds", sg_id: 13, city: "Cincinnati" },
+  { name: "Cleveland Guardians", short: "Guardians", sg_id: 6, city: "Cleveland" },
+  { name: "Colorado Rockies", short: "Rockies", sg_id: 14, city: "Denver" },
+  { name: "Detroit Tigers", short: "Tigers", sg_id: 7, city: "Detroit" },
+  { name: "Houston Astros", short: "Astros", sg_id: 15, city: "Houston" },
+  { name: "Kansas City Royals", short: "Royals", sg_id: 16, city: "Kansas City" },
+  { name: "Los Angeles Angels", short: "Angels", sg_id: 17, city: "Anaheim" },
+  { name: "Los Angeles Dodgers", short: "Dodgers", sg_id: 18, city: "Los Angeles" },
+  { name: "Miami Marlins", short: "Marlins", sg_id: 19, city: "Miami" },
+  { name: "Milwaukee Brewers", short: "Brewers", sg_id: 20, city: "Milwaukee" },
+  { name: "Minnesota Twins", short: "Twins", sg_id: 8, city: "Minneapolis" },
+  { name: "New York Mets", short: "Mets", sg_id: 21, city: "New York" },
+  { name: "New York Yankees", short: "Yankees", sg_id: 9, city: "New York" },
+  { name: "Oakland Athletics", short: "Athletics", sg_id: 22, city: "Oakland" },
+  { name: "Philadelphia Phillies", short: "Phillies", sg_id: 23, city: "Philadelphia" },
+  { name: "Pittsburgh Pirates", short: "Pirates", sg_id: 24, city: "Pittsburgh" },
+  { name: "San Diego Padres", short: "Padres", sg_id: 25, city: "San Diego" },
+  { name: "San Francisco Giants", short: "Giants", sg_id: 26, city: "San Francisco" },
+  { name: "Seattle Mariners", short: "Mariners", sg_id: 27, city: "Seattle" },
+  { name: "St. Louis Cardinals", short: "Cardinals", sg_id: 28, city: "St. Louis" },
+  { name: "Tampa Bay Rays", short: "Rays", sg_id: 5, city: "St. Petersburg" },
+  { name: "Texas Rangers", short: "Rangers", sg_id: 29, city: "Arlington" },
+  { name: "Toronto Blue Jays", short: "Blue Jays", sg_id: 30, city: "Toronto" },
+  { name: "Washington Nationals", short: "Nationals", sg_id: 31, city: "Washington" },
+];
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -13,67 +44,64 @@ const styles = `
     pointer-events: none; z-index: 0;
   }
   .glow { position: fixed; width: 600px; height: 600px; background: radial-gradient(circle, rgba(255,180,0,0.06) 0%, transparent 70%); top: -200px; right: -200px; pointer-events: none; z-index: 0; }
-  .container { max-width: 860px; margin: 0 auto; padding: 60px 24px 100px; position: relative; z-index: 1; }
-  .header { margin-bottom: 48px; }
+  .container { max-width: 900px; margin: 0 auto; padding: 60px 24px 100px; position: relative; z-index: 1; }
+  .header { margin-bottom: 40px; }
   .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #f5a623; border: 1px solid rgba(245,166,35,0.3); padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
   h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(52px, 9vw, 88px); line-height: 0.92; letter-spacing: 1px; color: #f0ede6; margin-bottom: 16px; }
   h1 span { color: #f5a623; display: block; }
-  .subtitle { font-size: 15px; color: rgba(240,237,230,0.45); font-weight: 300; max-width: 440px; line-height: 1.6; }
-
-  .search-wrap { position: relative; margin-bottom: 12px; }
-  .search-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 16px 110px 16px 20px; color: #f0ede6; font-family: 'DM Sans', sans-serif; font-size: 16px; outline: none; transition: border-color 0.2s; }
+  .subtitle { font-size: 15px; color: rgba(240,237,230,0.45); font-weight: 300; max-width: 480px; line-height: 1.6; }
+  .search-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 14px 20px; color: #f0ede6; font-family: 'DM Sans', sans-serif; font-size: 16px; outline: none; transition: border-color 0.2s; margin-bottom: 20px; }
   .search-input:focus { border-color: rgba(245,166,35,0.5); }
   .search-input::placeholder { color: rgba(240,237,230,0.25); }
-  .search-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: #f5a623; border: none; border-radius: 6px; padding: 10px 18px; color: #0a0a0a; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 1px; cursor: pointer; transition: background 0.2s; }
-  .search-btn:hover:not(:disabled) { background: #ffc947; }
-  .search-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .dropdown { background: #161616; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
-  .event-item { padding: 14px 20px; cursor: pointer; transition: background 0.15s; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 14px; }
-  .event-item:last-child { border-bottom: none; }
-  .event-item:hover { background: rgba(245,166,35,0.08); }
-  .event-type { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #f5a623; background: rgba(245,166,35,0.1); padding: 2px 8px; border-radius: 2px; white-space: nowrap; flex-shrink: 0; }
+  .section-label { font-size: 11px; font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(240,237,230,0.3); margin-bottom: 14px; }
+  .teams-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 32px; }
+  .team-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px 16px; cursor: pointer; transition: all 0.15s; }
+  .team-card:hover { background: rgba(245,166,35,0.08); border-color: rgba(245,166,35,0.3); transform: translateY(-1px); }
+  .team-name { font-size: 13px; font-weight: 600; color: #f0ede6; }
+  .team-city { font-size: 11px; color: rgba(240,237,230,0.35); margin-top: 2px; }
+  .selected-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(245,166,35,0.06); border: 1px solid rgba(245,166,35,0.2); border-radius: 8px; padding: 14px 20px; margin-bottom: 24px; }
+  .selected-bar-name { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; color: #f5a623; }
+  .selected-bar-meta { font-size: 12px; color: rgba(240,237,230,0.4); margin-top: 2px; }
+  .back-btn { background: none; border: 1px solid rgba(255,255,255,0.12); color: rgba(240,237,230,0.5); padding: 6px 14px; border-radius: 4px; font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .back-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(240,237,230,0.8); }
+  .event-row { padding: 14px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 16px; }
+  .event-row:hover { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.2); }
+  .event-date { font-size: 12px; font-weight: 600; color: #f5a623; white-space: nowrap; min-width: 90px; }
   .event-info { flex: 1; min-width: 0; }
-  .event-name { font-size: 14px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .event-meta { font-size: 12px; color: rgba(240,237,230,0.35); margin-top: 2px; }
-  .event-price { font-size: 13px; font-weight: 600; color: #f5a623; white-space: nowrap; flex-shrink: 0; }
-
-  .spinner-row { display: flex; align-items: center; gap: 10px; padding: 18px 20px; color: rgba(240,237,230,0.4); font-size: 14px; font-style: italic; }
-  .spinner { width: 16px; height: 16px; border: 2px solid rgba(245,166,35,0.2); border-top-color: #f5a623; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .selected-event { background: rgba(245,166,35,0.06); border: 1px solid rgba(245,166,35,0.2); border-radius: 8px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  .selected-name { font-size: 14px; font-weight: 500; }
-  .selected-meta { font-size: 12px; color: rgba(240,237,230,0.4); margin-top: 3px; }
-
-  .listings-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .event-title { font-size: 14px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-venue { font-size: 12px; color: rgba(240,237,230,0.35); margin-top: 2px; }
+  .event-price-tag { font-size: 13px; font-weight: 600; color: rgba(240,237,230,0.5); white-space: nowrap; }
+  .listings-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
   .listings-label { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: rgba(240,237,230,0.35); margin-bottom: 14px; }
-  .listing-row { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 12px; }
+  .listing-row { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 12px; }
   .listing-row:last-child { border-bottom: none; padding-bottom: 0; }
   .listing-section { font-size: 13px; color: rgba(240,237,230,0.7); flex: 1; }
   .listing-price { font-size: 14px; font-weight: 600; color: #f0ede6; }
   .listing-source { font-size: 11px; color: rgba(240,237,230,0.3); }
   .no-listings { font-size: 14px; color: rgba(240,237,230,0.3); font-style: italic; text-align: center; padding: 12px 0; }
-
   .analyze-btn { width: 100%; padding: 18px; background: #f5a623; color: #0a0a0a; border: none; border-radius: 6px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; cursor: pointer; transition: all 0.2s; }
   .analyze-btn:hover:not(:disabled) { background: #ffc947; transform: translateY(-1px); }
   .analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
-
-  .loading { display: flex; align-items: center; gap: 12px; padding: 28px; background: rgba(245,166,35,0.05); border: 1px solid rgba(245,166,35,0.15); border-radius: 8px; margin-top: 24px; }
-  .loading .spinner { width: 20px; height: 20px; }
+  .loading { display: flex; align-items: center; gap: 12px; padding: 24px; background: rgba(245,166,35,0.05); border: 1px solid rgba(245,166,35,0.15); border-radius: 8px; margin-top: 16px; }
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(245,166,35,0.2); border-top-color: #f5a623; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { font-size: 14px; color: rgba(240,237,230,0.5); font-style: italic; }
-
-  .results { margin-top: 40px; animation: fadeUp 0.4s ease forwards; }
+  .results { margin-top: 32px; animation: fadeUp 0.4s ease forwards; }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-  .results-header { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .results-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   .results-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; }
   .divider { flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
   .winner-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.3); color: #f5a623; font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
   .analysis-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 28px 32px; font-size: 15px; line-height: 1.75; color: rgba(240,237,230,0.85); white-space: pre-wrap; }
   .analysis-box strong { color: #f5a623; font-weight: 600; }
-
   .error { background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.2); border-radius: 8px; padding: 16px 20px; color: rgba(255,150,150,0.9); font-size: 14px; margin-top: 16px; }
 `;
+
+function formatDate(dateStr) {
+  if (!dateStr) return "TBD";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
 
 function formatAnalysis(text) {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
@@ -83,16 +111,11 @@ function formatAnalysis(text) {
   );
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-}
-
 export default function SeatGenius() {
-  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState(null);
   const [events, setEvents] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [listings, setListings] = useState([]);
   const [loadingListings, setLoadingListings] = useState(false);
@@ -100,33 +123,38 @@ export default function SeatGenius() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  const searchEvents = async () => {
-    if (!query.trim() || query.length < 2) return;
-    setSearching(true);
+  const filteredTeams = MLB_TEAMS.filter(t =>
+    t.name.toLowerCase().includes(search.toLowerCase()) ||
+    t.short.toLowerCase().includes(search.toLowerCase()) ||
+    t.city.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectTeam = async (team) => {
+    setSelectedTeam(team);
     setEvents([]);
-    setError(null);
     setSelectedEvent(null);
     setListings([]);
     setResult(null);
+    setError(null);
+    setLoadingEvents(true);
     try {
-      const res = await fetch(`${API_URL}/search?action=search&q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/search?action=events&performer_id=sg_${team.sg_id}&source=seatgeek`);
       const data = await res.json();
       setEvents(data.events || []);
     } catch {
-      setError("Couldn't reach the server. Please try again.");
+      setError("Couldn't load games. Try again.");
     } finally {
-      setSearching(false);
+      setLoadingEvents(false);
     }
   };
 
   const selectEvent = async (event) => {
     setSelectedEvent(event);
-    setEvents([]);
     setListings([]);
     setResult(null);
     setLoadingListings(true);
     try {
-      const res = await fetch(`${API_URL}/search?action=listings&event_id=${event.id}`);
+      const res = await fetch(`/api/search?action=listings&event_id=${event.id}&source=${event.source}`);
       const data = await res.json();
       setListings(data.listings || []);
     } catch {
@@ -154,11 +182,11 @@ export default function SeatGenius() {
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
           messages: [{
-            role: "user", content:
-`You are an expert ticket deal analyzer. A user wants the best deal for:
-"${selectedEvent.title}" on ${formatDate(selectedEvent.datetime_local)} at ${selectedEvent.venue?.name || "the venue"} in ${selectedEvent.venue?.city}.
+            role: "user",
+            content: `You are an expert ticket deal analyzer. A user wants the best deal for:
+"${selectedEvent.title}" on ${formatDate(selectedEvent.datetime_local)} at ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}.
 
-Here are current listings pulled live from SeatGeek:
+Here are current listings pulled live:
 
 ${listingText}
 
@@ -182,6 +210,23 @@ Be direct and opinionated. Bold the winner and key insights.`
     }
   };
 
+  const resetToTeams = () => {
+    setSelectedTeam(null);
+    setEvents([]);
+    setSelectedEvent(null);
+    setListings([]);
+    setResult(null);
+    setError(null);
+    setSearch("");
+  };
+
+  const resetToEvents = () => {
+    setSelectedEvent(null);
+    setListings([]);
+    setResult(null);
+    setError(null);
+  };
+
   return (
     <>
       <style>{styles}</style>
@@ -190,69 +235,93 @@ Be direct and opinionated. Bold the winner and key insights.`
         <div className="glow" />
         <div className="container">
           <div className="header">
-            <div className="tag">Powered by AWS · SeatGeek</div>
+            <div className="tag">⚾ MLB 2026 · Powered by AI</div>
             <h1>Seat<span>Genius.</span></h1>
-            <p className="subtitle">Search any event. Live listings pulled instantly. AI finds you the best deal.</p>
+            <p className="subtitle">Pick your team. Find the best ticket deal for any game this season.</p>
           </div>
 
-          {/* Search bar — always visible */}
-          <div className="search-wrap">
-            <input
-              className="search-input"
-              placeholder="Search an event — artist, team, show..."
-              value={query}
-              onChange={e => { setQuery(e.target.value); setEvents([]); }}
-              onKeyDown={e => e.key === "Enter" && searchEvents()}
-            />
-            <button className="search-btn" onClick={searchEvents} disabled={searching || !query.trim()}>
-              {searching ? "..." : "SEARCH"}
-            </button>
-          </div>
-
-          {/* Dropdown results */}
-          {(searching || events.length > 0) && (
-            <div className="dropdown">
-              {searching && (
-                <div className="spinner-row">
-                  <div className="spinner" />
-                  Searching live events...
-                </div>
-              )}
-              {events.map((ev) => (
-                <div className="event-item" key={ev.id} onClick={() => selectEvent(ev)}>
-                  <span className="event-type">{ev.type}</span>
-                  <div className="event-info">
-                    <div className="event-name">{ev.title}</div>
-                    <div className="event-meta">
-                      {formatDate(ev.datetime_local)} · {ev.venue?.name} · {ev.venue?.city}, {ev.venue?.state}
-                    </div>
+          {/* STEP 1 — Pick a team */}
+          {!selectedTeam && (
+            <>
+              <input
+                className="search-input"
+                placeholder="Search a team — Cubs, Yankees, Dodgers..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <div className="section-label">{search ? `${filteredTeams.length} teams found` : "All 30 MLB Teams"}</div>
+              <div className="teams-grid">
+                {filteredTeams.map(team => (
+                  <div className="team-card" key={team.name} onClick={() => selectTeam(team)}>
+                    <div className="team-name">{team.short}</div>
+                    <div className="team-city">{team.city}</div>
                   </div>
-                  {ev.stats?.lowest_price && (
-                    <span className="event-price">from ${ev.stats.lowest_price}</span>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
 
-          {error && <div className="error">⚠️ {error}</div>}
+          {/* STEP 2 — Pick a game */}
+          {selectedTeam && !selectedEvent && (
+            <>
+              <div className="selected-bar">
+                <div>
+                  <div className="selected-bar-name">{selectedTeam.name}</div>
+                  <div className="selected-bar-meta">Upcoming Games</div>
+                </div>
+                <button className="back-btn" onClick={resetToTeams}>← All Teams</button>
+              </div>
 
-          {/* Selected event */}
+              {loadingEvents ? (
+                <div className="loading">
+                  <div className="spinner" />
+                  <span className="loading-text">Loading {selectedTeam.short} schedule...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="section-label">{events.length} upcoming games</div>
+                  {events.length === 0 && (
+                    <div style={{ color: "rgba(240,237,230,0.3)", fontSize: 14, fontStyle: "italic" }}>
+                      No upcoming games found.
+                    </div>
+                  )}
+                  {events.map(ev => (
+                    <div className="event-row" key={ev.id} onClick={() => selectEvent(ev)}>
+                      <div className="event-date">{formatDate(ev.datetime_local)}</div>
+                      <div className="event-info">
+                        <div className="event-title">{ev.short_title || ev.title}</div>
+                        <div className="event-venue">{ev.venue} · {ev.city}, {ev.state}</div>
+                      </div>
+                      {ev.lowest_price && (
+                        <div className="event-price-tag">from ${ev.lowest_price}</div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+              {error && <div className="error">⚠️ {error}</div>}
+            </>
+          )}
+
+          {/* STEP 3 — Listings + AI Analysis */}
           {selectedEvent && (
             <>
-              <div className="selected-event">
+              <div className="selected-bar">
                 <div>
-                  <div className="selected-name">{selectedEvent.title}</div>
-                  <div className="selected-meta">
-                    {formatDate(selectedEvent.datetime_local)} · {selectedEvent.venue?.name} · {selectedEvent.venue?.city}
+                  <div className="selected-bar-name" style={{ fontSize: 16 }}>
+                    {selectedEvent.short_title || selectedEvent.title}
+                  </div>
+                  <div className="selected-bar-meta">
+                    {formatDate(selectedEvent.datetime_local)} · {selectedEvent.venue} · {selectedEvent.city}
                   </div>
                 </div>
+                <button className="back-btn" onClick={resetToEvents}>← Games</button>
               </div>
 
               {loadingListings ? (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">Pulling live listings from SeatGeek...</span>
+                  <span className="loading-text">Pulling live ticket listings...</span>
                 </div>
               ) : (
                 <>
@@ -278,38 +347,40 @@ Be direct and opinionated. Bold the winner and key insights.`
                         )}
                       </>
                     ) : (
-                      <div className="no-listings">No resale listings available for this event yet.</div>
+                      <div className="no-listings">No resale listings available for this game yet.</div>
                     )}
                   </div>
+
+                  {error && <div className="error">⚠️ {error}</div>}
 
                   <button
                     className="analyze-btn"
                     onClick={handleAnalyze}
                     disabled={!listings.length || analyzing}
                   >
-                    {analyzing ? "Analyzing..." : listings.length ? `Analyze ${listings.length} Listings →` : "No Listings Available"}
+                    {analyzing ? "Analyzing..." : listings.length ? `Find Best Deal — ${listings.length} Listings →` : "No Listings Yet"}
                   </button>
                 </>
               )}
+
+              {analyzing && (
+                <div className="loading">
+                  <div className="spinner" />
+                  <span className="loading-text">AI is comparing listings and finding the best deal…</span>
+                </div>
+              )}
+
+              {result && (
+                <div className="results">
+                  <div className="results-header">
+                    <span className="results-title">Best Deal Found</span>
+                    <div className="divider" />
+                  </div>
+                  <div className="winner-badge">⚡ AI Verdict</div>
+                  <div className="analysis-box">{formatAnalysis(result)}</div>
+                </div>
+              )}
             </>
-          )}
-
-          {analyzing && (
-            <div className="loading">
-              <div className="spinner" />
-              <span className="loading-text">AI is comparing {listings.length} listings, checking value, spotting red flags…</span>
-            </div>
-          )}
-
-          {result && (
-            <div className="results">
-              <div className="results-header">
-                <span className="results-title">Analysis Complete</span>
-                <div className="divider" />
-              </div>
-              <div className="winner-badge">⚡ AI Verdict — {selectedEvent?.title}</div>
-              <div className="analysis-box">{formatAnalysis(result)}</div>
-            </div>
           )}
         </div>
       </div>
