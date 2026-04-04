@@ -145,6 +145,8 @@ export default function SeatGenius() {
   const [error, setError] = useState(null);
   const [deals, setDeals] = useState([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
+  const [platforms, setPlatforms] = useState([]);
+  const [bestPlatform, setBestPlatform] = useState(null);
 
   useEffect(() => {
     setLoadingDeals(true);
@@ -185,12 +187,20 @@ export default function SeatGenius() {
     setListings([]);
     setBuyUrl(null);
     setResult(null);
+    setPlatforms([]);
+    setBestPlatform(null);
     setLoadingListings(true);
     try {
-      const res = await fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`);
-      const data = await res.json();
-      setListings(data.listings || []);
-      setBuyUrl(data.buy_url || null);
+      const [listingsRes, compareRes] = await Promise.all([
+        fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`),
+        fetch(`${AWS_URL}/search?action=compare&event_id=${event.id}`),
+      ]);
+      const listingsData = await listingsRes.json();
+      setListings(listingsData.listings || []);
+      setBuyUrl(listingsData.buy_url || null);
+      const compareData = await compareRes.json();
+      setPlatforms(compareData.platforms || []);
+      setBestPlatform(compareData.best_platform || null);
     } catch {
       setError("Couldn't load listings. Try again.");
     } finally {
@@ -260,6 +270,8 @@ Be direct and opinionated. Bold the key insights.`
     setResult(null);
     setError(null);
     setBuyUrl(null);
+    setPlatforms([]);
+    setBestPlatform(null);
   };
 
   return (
@@ -408,6 +420,35 @@ Be direct and opinionated. Bold the key insights.`
                       <div className="no-listings">No ticket prices available yet for this game.</div>
                     )}
                   </div>
+
+                  {platforms.length > 0 && (
+                    <div className="listings-box" style={{ marginTop: 12 }}>
+                      <div className="listings-label">Price Comparison Across Platforms</div>
+                      {platforms.map((p, i) => (
+                        <div className="listing-row" key={i} style={{ opacity: p.status === 'pending_affiliate' ? 0.4 : 1 }}>
+                          <div className="listing-section" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {p.platform}
+                            {p.platform === bestPlatform && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#50c878', background: 'rgba(80,200,120,0.12)', padding: '2px 6px', borderRadius: 3, letterSpacing: 1 }}>BEST</span>
+                            )}
+                            {p.status === 'pending_affiliate' && (
+                              <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>coming soon</span>
+                            )}
+                          </div>
+                          <div>
+                            {p.lowest_price ? (
+                              <>
+                                <div className="listing-price">${p.lowest_price}{p.highest_price ? ` – $${p.highest_price}` : ''}</div>
+                                {p.buy_url && <a href={p.buy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#f5a623', textDecoration: 'none' }}>Buy →</a>}
+                              </>
+                            ) : (
+                              <div className="listing-price" style={{ color: 'rgba(240,237,230,0.25)' }}>—</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {error && <div className="error">⚠️ {error}</div>}
 

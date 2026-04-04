@@ -62,6 +62,64 @@ exports.handler = async (event) => {
       return respond(200, { listings, buy_url: data.url || null });
     }
 
+    if (action === 'compare') {
+      const sgResponse = await fetch(
+        `https://api.seatgeek.com/2/events/${event_id}?client_id=${SEATGEEK_CLIENT_ID}`
+      );
+      const sgData = await sgResponse.json();
+      const sgStats = sgData.stats || {};
+
+      const platforms = [];
+
+      if (sgStats.lowest_price) {
+        platforms.push({
+          platform: 'SeatGeek',
+          lowest_price: sgStats.lowest_price,
+          average_price: sgStats.average_price || null,
+          median_price: sgStats.median_price || null,
+          highest_price: sgStats.highest_price || null,
+          listing_count: sgStats.listing_count || null,
+          buy_url: sgData.url || null,
+        });
+      }
+
+      // Placeholder entries for platforms pending affiliate approval.
+      // Once API keys are available, replace these with live fetches.
+      platforms.push({
+        platform: 'StubHub',
+        lowest_price: null,
+        average_price: null,
+        median_price: null,
+        highest_price: null,
+        listing_count: null,
+        buy_url: null,
+        status: 'pending_affiliate',
+      });
+
+      platforms.push({
+        platform: 'Vivid Seats',
+        lowest_price: null,
+        average_price: null,
+        median_price: null,
+        highest_price: null,
+        listing_count: null,
+        buy_url: null,
+        status: 'pending_affiliate',
+      });
+
+      let best_platform = null;
+      const available = platforms.filter(p => p.lowest_price != null);
+      if (available.length > 0) {
+        best_platform = available.reduce((a, b) => a.lowest_price <= b.lowest_price ? a : b).platform;
+      }
+
+      return respond(200, {
+        event_title: sgData.short_title || sgData.title || null,
+        platforms,
+        best_platform,
+      });
+    }
+
     return respond(400, { error: 'Invalid action' });
 
   } catch (err) {
