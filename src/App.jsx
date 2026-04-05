@@ -2,38 +2,7 @@ import { useState, useEffect } from "react";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
-const MLB_TEAMS = [
-  { name: "Arizona Diamondbacks", short: "D-backs", city: "Phoenix" },
-  { name: "Atlanta Braves", short: "Braves", city: "Atlanta" },
-  { name: "Baltimore Orioles", short: "Orioles", city: "Baltimore" },
-  { name: "Boston Red Sox", short: "Red Sox", city: "Boston" },
-  { name: "Chicago Cubs", short: "Cubs", city: "Chicago" },
-  { name: "Chicago White Sox", short: "White Sox", city: "Chicago" },
-  { name: "Cincinnati Reds", short: "Reds", city: "Cincinnati" },
-  { name: "Cleveland Guardians", short: "Guardians", city: "Cleveland" },
-  { name: "Colorado Rockies", short: "Rockies", city: "Denver" },
-  { name: "Detroit Tigers", short: "Tigers", city: "Detroit" },
-  { name: "Houston Astros", short: "Astros", city: "Houston" },
-  { name: "Kansas City Royals", short: "Royals", city: "Kansas City" },
-  { name: "Los Angeles Angels", short: "Angels", city: "Anaheim" },
-  { name: "Los Angeles Dodgers", short: "Dodgers", city: "Los Angeles" },
-  { name: "Miami Marlins", short: "Marlins", city: "Miami" },
-  { name: "Milwaukee Brewers", short: "Brewers", city: "Milwaukee" },
-  { name: "Minnesota Twins", short: "Twins", city: "Minneapolis" },
-  { name: "New York Mets", short: "Mets", city: "New York" },
-  { name: "New York Yankees", short: "Yankees", city: "New York" },
-  { name: "Oakland Athletics", short: "Athletics", city: "Oakland" },
-  { name: "Philadelphia Phillies", short: "Phillies", city: "Philadelphia" },
-  { name: "Pittsburgh Pirates", short: "Pirates", city: "Pittsburgh" },
-  { name: "San Diego Padres", short: "Padres", city: "San Diego" },
-  { name: "San Francisco Giants", short: "Giants", city: "San Francisco" },
-  { name: "Seattle Mariners", short: "Mariners", city: "Seattle" },
-  { name: "St. Louis Cardinals", short: "Cardinals", city: "St. Louis" },
-  { name: "Tampa Bay Rays", short: "Rays", city: "St. Petersburg" },
-  { name: "Texas Rangers", short: "Rangers", city: "Arlington" },
-  { name: "Toronto Blue Jays", short: "Blue Jays", city: "Toronto" },
-  { name: "Washington Nationals", short: "Nationals", city: "Washington" },
-];
+const CUBS_TEAM = { name: "Chicago Cubs", short: "Cubs", city: "Chicago" };
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -45,30 +14,30 @@ const styles = `
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
     pointer-events: none; z-index: 0;
   }
-  .glow { position: fixed; width: 600px; height: 600px; background: radial-gradient(circle, rgba(255,180,0,0.06) 0%, transparent 70%); top: -200px; right: -200px; pointer-events: none; z-index: 0; }
+  .glow { position: fixed; width: 600px; height: 600px; background: radial-gradient(circle, rgba(14,51,134,0.12) 0%, transparent 70%); top: -200px; right: -200px; pointer-events: none; z-index: 0; }
   .container { max-width: 900px; margin: 0 auto; padding: 60px 24px 100px; position: relative; z-index: 1; }
   .header { margin-bottom: 40px; }
-  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #f5a623; border: 1px solid rgba(245,166,35,0.3); padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #cc3433; border: 1px solid rgba(204,52,51,0.3); padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
   h1 { font-family: 'Bebas Neue', sans-serif; font-size: clamp(52px, 9vw, 88px); line-height: 0.92; letter-spacing: 1px; color: #f0ede6; margin-bottom: 16px; }
-  h1 span { color: #f5a623; display: block; }
+  h1 span { color: #0e3386; display: block; }
   .subtitle { font-size: 15px; color: rgba(240,237,230,0.45); font-weight: 300; max-width: 480px; line-height: 1.6; }
   .search-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 14px 20px; color: #f0ede6; font-family: 'DM Sans', sans-serif; font-size: 16px; outline: none; transition: border-color 0.2s; margin-bottom: 20px; }
-  .search-input:focus { border-color: rgba(245,166,35,0.5); }
+  .search-input:focus { border-color: rgba(14,51,134,0.5); }
   .search-input::placeholder { color: rgba(240,237,230,0.25); }
   .section-label { font-size: 11px; font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(240,237,230,0.3); margin-bottom: 14px; }
   .teams-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 32px; }
   .team-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px 16px; cursor: pointer; transition: all 0.15s; }
-  .team-card:hover { background: rgba(245,166,35,0.08); border-color: rgba(245,166,35,0.3); transform: translateY(-1px); }
+  .team-card:hover { background: rgba(14,51,134,0.08); border-color: rgba(14,51,134,0.3); transform: translateY(-1px); }
   .team-name { font-size: 13px; font-weight: 600; color: #f0ede6; }
   .team-city { font-size: 11px; color: rgba(240,237,230,0.35); margin-top: 2px; }
-  .selected-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(245,166,35,0.06); border: 1px solid rgba(245,166,35,0.2); border-radius: 8px; padding: 14px 20px; margin-bottom: 24px; }
-  .selected-bar-name { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; color: #f5a623; }
+  .selected-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(14,51,134,0.08); border: 1px solid rgba(14,51,134,0.25); border-radius: 8px; padding: 14px 20px; margin-bottom: 24px; }
+  .selected-bar-name { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; color: #0e3386; }
   .selected-bar-meta { font-size: 12px; color: rgba(240,237,230,0.4); margin-top: 2px; }
   .back-btn { background: none; border: 1px solid rgba(255,255,255,0.12); color: rgba(240,237,230,0.5); padding: 6px 14px; border-radius: 4px; font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
   .back-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(240,237,230,0.8); }
   .event-row { padding: 14px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 16px; }
-  .event-row:hover { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.2); }
-  .event-date { font-size: 12px; font-weight: 600; color: #f5a623; white-space: nowrap; min-width: 90px; }
+  .event-row:hover { background: rgba(14,51,134,0.06); border-color: rgba(14,51,134,0.25); }
+  .event-date { font-size: 12px; font-weight: 600; color: #cc3433; white-space: nowrap; min-width: 90px; }
   .event-info { flex: 1; min-width: 0; }
   .event-title { font-size: 14px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .event-venue { font-size: 12px; color: rgba(240,237,230,0.35); margin-top: 2px; }
@@ -82,13 +51,13 @@ const styles = `
   .listing-price { font-size: 14px; font-weight: 600; color: #f0ede6; }
   .listing-range { font-size: 11px; color: rgba(240,237,230,0.3); }
   .no-listings { font-size: 14px; color: rgba(240,237,230,0.3); font-style: italic; text-align: center; padding: 12px 0; }
-  .buy-btn { display: block; text-align: center; margin-top: 12px; padding: 10px; background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); border-radius: 6px; color: #f5a623; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
-  .buy-btn:hover { background: rgba(245,166,35,0.2); }
-  .analyze-btn { width: 100%; padding: 18px; background: #f5a623; color: #0a0a0a; border: none; border-radius: 6px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; cursor: pointer; transition: all 0.2s; }
-  .analyze-btn:hover:not(:disabled) { background: #ffc947; transform: translateY(-1px); }
+  .buy-btn { display: block; text-align: center; margin-top: 12px; padding: 10px; background: rgba(14,51,134,0.1); border: 1px solid rgba(14,51,134,0.3); border-radius: 6px; color: #4a7aff; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
+  .buy-btn:hover { background: rgba(14,51,134,0.2); }
+  .analyze-btn { width: 100%; padding: 18px; background: #0e3386; color: #ffffff; border: none; border-radius: 6px; font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; cursor: pointer; transition: all 0.2s; }
+  .analyze-btn:hover:not(:disabled) { background: #1a4ab8; transform: translateY(-1px); }
   .analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
-  .loading { display: flex; align-items: center; gap: 12px; padding: 24px; background: rgba(245,166,35,0.05); border: 1px solid rgba(245,166,35,0.15); border-radius: 8px; margin-top: 16px; }
-  .spinner { width: 18px; height: 18px; border: 2px solid rgba(245,166,35,0.2); border-top-color: #f5a623; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  .loading { display: flex; align-items: center; gap: 12px; padding: 24px; background: rgba(14,51,134,0.05); border: 1px solid rgba(14,51,134,0.15); border-radius: 8px; margin-top: 16px; }
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(14,51,134,0.2); border-top-color: #0e3386; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { font-size: 14px; color: rgba(240,237,230,0.5); font-style: italic; }
   .results { margin-top: 32px; animation: fadeUp 0.4s ease forwards; }
@@ -96,17 +65,17 @@ const styles = `
   .results-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   .results-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; }
   .divider { flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
-  .winner-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.3); color: #f5a623; font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
+  .winner-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(204,52,51,0.12); border: 1px solid rgba(204,52,51,0.3); color: #cc3433; font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 2px; margin-bottom: 20px; }
   .analysis-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 28px 32px; font-size: 15px; line-height: 1.75; color: rgba(240,237,230,0.85); white-space: pre-wrap; }
-  .analysis-box strong { color: #f5a623; font-weight: 600; }
+  .analysis-box strong { color: #cc3433; font-weight: 600; }
   .error { background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.2); border-radius: 8px; padding: 16px 20px; color: rgba(255,150,150,0.9); font-size: 14px; margin-top: 16px; }
   .deals-section { margin-bottom: 40px; }
   .deals-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .deal-card { padding: 16px 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; display: flex; align-items: center; gap: 14px; transition: all 0.15s; }
-  .deal-card:hover { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.2); }
+  .deal-card:hover { background: rgba(14,51,134,0.06); border-color: rgba(14,51,134,0.25); }
   .deal-badge { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; white-space: nowrap; }
   .deal-badge.great { background: rgba(80,200,120,0.15); color: #50c878; border: 1px solid rgba(80,200,120,0.3); }
-  .deal-badge.good { background: rgba(245,166,35,0.12); color: #f5a623; border: 1px solid rgba(245,166,35,0.3); }
+  .deal-badge.good { background: rgba(14,51,134,0.12); color: #4a7aff; border: 1px solid rgba(14,51,134,0.3); }
   .deal-badge.fair { background: rgba(240,237,230,0.06); color: rgba(240,237,230,0.5); border: 1px solid rgba(240,237,230,0.12); }
   .deal-info { flex: 1; min-width: 0; }
   .deal-title { font-size: 13px; font-weight: 500; color: #f0ede6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -132,10 +101,8 @@ function formatAnalysis(text) {
 }
 
 export default function SeatGenius() {
-  const [search, setSearch] = useState("");
-  const [selectedTeam, setSelectedTeam] = useState(null);
   const [events, setEvents] = useState([]);
-  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [listings, setListings] = useState([]);
   const [buyUrl, setBuyUrl] = useState(null);
@@ -144,44 +111,17 @@ export default function SeatGenius() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [deals, setDeals] = useState([]);
-  const [loadingDeals, setLoadingDeals] = useState(false);
   const [platforms, setPlatforms] = useState([]);
   const [bestPlatform, setBestPlatform] = useState(null);
 
   useEffect(() => {
-    setLoadingDeals(true);
-    fetch(`${AWS_URL}/search?action=monitor`)
-      .then(res => res.json())
-      .then(data => setDeals((data.deals || []).slice(0, 5)))
-      .catch(() => {})
-      .finally(() => setLoadingDeals(false));
-  }, []);
-
-  const filteredTeams = MLB_TEAMS.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.short.toLowerCase().includes(search.toLowerCase()) ||
-    t.city.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const selectTeam = async (team) => {
-    setSelectedTeam(team);
-    setEvents([]);
-    setSelectedEvent(null);
-    setListings([]);
-    setResult(null);
-    setError(null);
     setLoadingEvents(true);
-    try {
-      const res = await fetch(`${AWS_URL}/search?action=events&team=${encodeURIComponent(team.name)}`);
-      const data = await res.json();
-      setEvents(data.events || []);
-    } catch {
-      setError("Couldn't load games. Try again.");
-    } finally {
-      setLoadingEvents(false);
-    }
-  };
+    fetch(`${AWS_URL}/search?action=events&team=${encodeURIComponent(CUBS_TEAM.name)}`)
+      .then(res => res.json())
+      .then(data => setEvents(data.events || []))
+      .catch(() => setError("Couldn't load games. Try again."))
+      .finally(() => setLoadingEvents(false));
+  }, []);
 
   const selectEvent = async (event) => {
     setSelectedEvent(event);
@@ -257,16 +197,6 @@ Be direct and opinionated. Bold the key insights.`
     }
   };
 
-  const resetToTeams = () => {
-    setSelectedTeam(null);
-    setEvents([]);
-    setSelectedEvent(null);
-    setListings([]);
-    setResult(null);
-    setError(null);
-    setSearch("");
-  };
-
   const resetToEvents = () => {
     setSelectedEvent(null);
     setListings([]);
@@ -286,73 +216,17 @@ Be direct and opinionated. Bold the key insights.`
         <div className="glow" />
         <div className="container">
           <div className="header">
-            <div className="tag">⚾ MLB 2026 · Powered by AI</div>
+            <div className="tag">⚾ Chicago Cubs 2026 · Powered by AI</div>
             <h1>Seat<span>Genius.</span></h1>
-            <p className="subtitle">Pick your team. Find the best ticket deal for any game this season.</p>
+            <p className="subtitle">Find the best deal on Cubs tickets at Wrigley Field.</p>
           </div>
 
-          {!selectedTeam && (
+          {!selectedEvent && (
             <>
-              {!search && deals.length > 0 && (
-                <div className="deals-section">
-                  <div className="section-label">Hot Deals Right Now</div>
-                  <div className="deals-grid">
-                    {deals.map(d => (
-                      <div className="deal-card" key={d.id}>
-                        <div className={`deal-badge ${d.deal_rating}`}>{d.deal_rating}</div>
-                        <div className="deal-info">
-                          <div className="deal-title">{d.title}</div>
-                          <div className="deal-meta">{formatDate(d.datetime_local)} · {d.venue}</div>
-                        </div>
-                        <div className="deal-prices">
-                          <div className="deal-low">${d.lowest_price}</div>
-                          <div className="deal-avg">avg ${d.average_price}</div>
-                          <div className="deal-discount">{d.discount_pct}% below avg</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {loadingDeals && !deals.length && (
-                <div className="loading" style={{ marginBottom: 24 }}>
-                  <div className="spinner" />
-                  <span className="loading-text">Finding hot deals...</span>
-                </div>
-              )}
-
-              <input
-                className="search-input"
-                placeholder="Search a team — Cubs, Yankees, Dodgers..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-              <div className="section-label">{search ? `${filteredTeams.length} teams found` : "All 30 MLB Teams"}</div>
-              <div className="teams-grid">
-                {filteredTeams.map(team => (
-                  <div className="team-card" key={team.name} onClick={() => selectTeam(team)}>
-                    <div className="team-name">{team.short}</div>
-                    <div className="team-city">{team.city}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {selectedTeam && !selectedEvent && (
-            <>
-              <div className="selected-bar">
-                <div>
-                  <div className="selected-bar-name">{selectedTeam.name}</div>
-                  <div className="selected-bar-meta">Upcoming Games</div>
-                </div>
-                <button className="back-btn" onClick={resetToTeams}>← All Teams</button>
-              </div>
-
               {loadingEvents ? (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">Loading {selectedTeam.short} schedule...</span>
+                  <span className="loading-text">Loading Cubs schedule...</span>
                 </div>
               ) : (
                 <>
@@ -391,7 +265,7 @@ Be direct and opinionated. Bold the key insights.`
                     {formatDate(selectedEvent.datetime_local)} · {selectedEvent.venue} · {selectedEvent.city}
                   </div>
                 </div>
-                <button className="back-btn" onClick={resetToEvents}>← Games</button>
+                <button className="back-btn" onClick={resetToEvents}>← Cubs Schedule</button>
               </div>
 
               {loadingListings ? (
@@ -456,7 +330,7 @@ Be direct and opinionated. Bold the key insights.`
                             {p.lowest_price ? (
                               <>
                                 <div className="listing-price">${p.lowest_price}{p.highest_price ? ` – $${p.highest_price}` : ''}</div>
-                                {p.buy_url && <a href={p.buy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#f5a623', textDecoration: 'none' }}>Buy →</a>}
+                                {p.buy_url && <a href={p.buy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#4a7aff', textDecoration: 'none' }}>Buy →</a>}
                               </>
                             ) : (
                               <div className="listing-price" style={{ color: 'rgba(240,237,230,0.25)' }}>—</div>
