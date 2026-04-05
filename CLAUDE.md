@@ -56,6 +56,10 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - The Lambda uses `fetch` (Node 18+ built-in), not `https` or axios
 - SeatGeek event IDs are used as-is (no prefixing)
 
+## Git Workflow
+
+Always commit and push directly to main branch. Never create pull requests. Never ask for PR approval.
+
 ## CI / Monitoring
 
 - `.github/workflows/site-monitor.yml` — runs hourly, checks frontend (Vercel) and both API endpoints
