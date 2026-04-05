@@ -2,6 +2,7 @@ exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
   const { action, team, event_id } = params;
   const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
+  const TICKETMASTER_API_KEY = 'l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk';
 
   const respond = (statusCode, body) => ({
     statusCode,
@@ -15,6 +16,41 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') {
     return respond(200, {});
+  }
+
+  async function fetchTicketmasterPrices(keyword, date) {
+    try {
+      const startDate = date ? `${date}T00:00:00Z` : '';
+      const endDate = date ? `${date}T23:59:59Z` : '';
+      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(keyword)}&classificationName=Baseball&size=5`;
+      if (startDate) url += `&startDateTime=${startDate}&endDateTime=${endDate}`;
+
+      const response = await fetch(url);
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const events = data?._embedded?.events;
+      if (!events || events.length === 0) return null;
+
+      const ev = events[0];
+      const priceRanges = ev.priceRanges || [];
+      const prices = priceRanges.filter(p => p.type === 'standard' || !p.type);
+
+      if (prices.length === 0 && priceRanges.length === 0) return null;
+
+      const allPrices = prices.length > 0 ? prices : priceRanges;
+      const mins = allPrices.map(p => p.min).filter(Boolean);
+      const maxes = allPrices.map(p => p.max).filter(Boolean);
+
+      return {
+        lowest_price: mins.length > 0 ? Math.min(...mins) : null,
+        highest_price: maxes.length > 0 ? Math.max(...maxes) : null,
+        buy_url: ev.url || null,
+        event_name: ev.name || null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   try {
@@ -42,24 +78,41 @@ exports.handler = async (event) => {
     }
 
     if (action === 'listings') {
-      const response = await fetch(
+      const sgResponse = await fetch(
         `https://api.seatgeek.com/2/events/${event_id}?client_id=${SEATGEEK_CLIENT_ID}`
       );
-      const data = await response.json();
-      const stats = data.stats || {};
+      const sgData = await sgResponse.json();
+      const stats = sgData.stats || {};
       const listings = [];
 
       if (stats.lowest_price) {
-        listings.push({ section: 'Upper Level / Budget', price: stats.lowest_price, max_price: stats.median_price || stats.lowest_price, source: 'seatgeek' });
+        listings.push({ section: 'Upper Level / Budget', price: stats.lowest_price, max_price: stats.median_price || stats.lowest_price, source: 'SeatGeek' });
       }
       if (stats.median_price) {
-        listings.push({ section: 'Mid-Range', price: stats.median_price, max_price: stats.average_price || stats.median_price, source: 'seatgeek' });
+        listings.push({ section: 'Mid-Range', price: stats.median_price, max_price: stats.average_price || stats.median_price, source: 'SeatGeek' });
       }
       if (stats.highest_price) {
-        listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'seatgeek' });
+        listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'SeatGeek' });
       }
 
-      return respond(200, { listings, buy_url: data.url || null });
+      const eventTitle = sgData.short_title || sgData.title || '';
+      const eventDate = sgData.datetime_local ? sgData.datetime_local.split('T')[0] : '';
+      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
+
+      if (tmData && tmData.lowest_price) {
+        listings.push({
+          section: 'Primary Market',
+          price: tmData.lowest_price,
+          max_price: tmData.highest_price || tmData.lowest_price,
+          source: 'Ticketmaster',
+        });
+      }
+
+      return respond(200, {
+        listings,
+        buy_url: sgData.url || null,
+        ticketmaster_url: tmData?.buy_url || null,
+      });
     }
 
     if (action === 'compare') {
@@ -68,6 +121,10 @@ exports.handler = async (event) => {
       );
       const sgData = await sgResponse.json();
       const sgStats = sgData.stats || {};
+
+      const eventTitle = sgData.short_title || sgData.title || '';
+      const eventDate = sgData.datetime_local ? sgData.datetime_local.split('T')[0] : '';
+      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
 
       const platforms = [];
 
@@ -83,8 +140,29 @@ exports.handler = async (event) => {
         });
       }
 
-      // Placeholder entries for platforms pending affiliate approval.
-      // Once API keys are available, replace these with live fetches.
+      if (tmData && tmData.lowest_price) {
+        platforms.push({
+          platform: 'Ticketmaster',
+          lowest_price: tmData.lowest_price,
+          average_price: null,
+          median_price: null,
+          highest_price: tmData.highest_price || null,
+          listing_count: null,
+          buy_url: tmData.buy_url || null,
+        });
+      } else {
+        platforms.push({
+          platform: 'Ticketmaster',
+          lowest_price: null,
+          average_price: null,
+          median_price: null,
+          highest_price: null,
+          listing_count: null,
+          buy_url: null,
+          status: 'no_data',
+        });
+      }
+
       platforms.push({
         platform: 'StubHub',
         lowest_price: null,

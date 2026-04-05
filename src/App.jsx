@@ -139,6 +139,7 @@ export default function SeatGenius() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [listings, setListings] = useState([]);
   const [buyUrl, setBuyUrl] = useState(null);
+  const [tmUrl, setTmUrl] = useState(null);
   const [loadingListings, setLoadingListings] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
@@ -186,6 +187,7 @@ export default function SeatGenius() {
     setSelectedEvent(event);
     setListings([]);
     setBuyUrl(null);
+    setTmUrl(null);
     setResult(null);
     setPlatforms([]);
     setBestPlatform(null);
@@ -198,6 +200,7 @@ export default function SeatGenius() {
       const listingsData = await listingsRes.json();
       setListings(listingsData.listings || []);
       setBuyUrl(listingsData.buy_url || null);
+      setTmUrl(listingsData.ticketmaster_url || null);
       const compareData = await compareRes.json();
       setPlatforms(compareData.platforms || []);
       setBestPlatform(compareData.best_platform || null);
@@ -270,6 +273,7 @@ Be direct and opinionated. Bold the key insights.`
     setResult(null);
     setError(null);
     setBuyUrl(null);
+    setTmUrl(null);
     setPlatforms([]);
     setBestPlatform(null);
   };
@@ -393,28 +397,38 @@ Be direct and opinionated. Bold the key insights.`
               {loadingListings ? (
                 <div className="loading">
                   <div className="spinner" />
-                  <span className="loading-text">Pulling live ticket prices from SeatGeek...</span>
+                  <span className="loading-text">Pulling live ticket prices...</span>
                 </div>
               ) : (
                 <>
                   <div className="listings-box">
                     {listings.length > 0 ? (
                       <>
-                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · via SeatGeek</div>
+                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · SeatGeek + Ticketmaster</div>
                         {listings.map((l, i) => (
                           <div className="listing-row" key={i}>
-                            <div className="listing-section">{l.section}</div>
+                            <div className="listing-section">
+                              {l.section}
+                              <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', marginLeft: 8 }}>{l.source}</span>
+                            </div>
                             <div>
                               <div className="listing-price">${l.price}{l.max_price && l.max_price !== l.price ? ` – $${l.max_price}` : ''}</div>
                               <div className="listing-range">per ticket</div>
                             </div>
                           </div>
                         ))}
-                        {buyUrl && (
-                          <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn">
-                            Buy on SeatGeek →
-                          </a>
-                        )}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                          {buyUrl && (
+                            <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
+                              Buy on SeatGeek →
+                            </a>
+                          )}
+                          {tmUrl && (
+                            <a href={tmUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
+                              Buy on Ticketmaster →
+                            </a>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <div className="no-listings">No ticket prices available yet for this game.</div>
@@ -425,7 +439,7 @@ Be direct and opinionated. Bold the key insights.`
                     <div className="listings-box" style={{ marginTop: 12 }}>
                       <div className="listings-label">Price Comparison Across Platforms</div>
                       {platforms.map((p, i) => (
-                        <div className="listing-row" key={i} style={{ opacity: p.status === 'pending_affiliate' ? 0.4 : 1 }}>
+                        <div className="listing-row" key={i} style={{ opacity: p.status === 'pending_affiliate' || p.status === 'no_data' ? 0.4 : 1 }}>
                           <div className="listing-section" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {p.platform}
                             {p.platform === bestPlatform && (
@@ -433,6 +447,9 @@ Be direct and opinionated. Bold the key insights.`
                             )}
                             {p.status === 'pending_affiliate' && (
                               <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>coming soon</span>
+                            )}
+                            {p.status === 'no_data' && (
+                              <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>no data</span>
                             )}
                           </div>
                           <div>
