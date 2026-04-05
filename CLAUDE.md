@@ -15,11 +15,11 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 **Frontend:** Single-page React 19 app (Vite 8, plain JSX, no TypeScript, no router). All UI lives in `src/App.jsx` — team selection, event list, ticket listings, and AI analysis are rendered as state-driven views within one component. Styles are embedded as a template string in App.jsx (not in CSS files).
 
-**Backend:** `api/search.js` and `api/monitor.js` are AWS Lambda handlers (`exports.handler`, CommonJS) deployed behind API Gateway at a hardcoded URL in `App.jsx` (`AWS_URL`). They proxy SeatGeek API calls:
-- `action=events&team=<name>` — search MLB events by team name keyword
-- `action=listings&event_id=<id>` — get price tiers (from event stats) and buy URL for a specific event
-- `action=compare&event_id=<id>` — multi-platform price comparison (SeatGeek live; StubHub/Vivid Seats pending)
-- `action=monitor` (monitor Lambda) — hot deals across MLB, ranked by discount vs average price
+**Backend:** `api/search.js` is an AWS Lambda handler (`exports.handler`, CommonJS) deployed behind API Gateway at a hardcoded URL in `App.jsx` (`AWS_URL`). All actions route through `/search`:
+- `action=events&team=<name>` — search MLB events by team name keyword, enriched with Ticketmaster prices
+- `action=listings&event_id=<id>` — get price tiers (SeatGeek stats + Ticketmaster primary market) and buy URLs
+- `action=compare&event_id=<id>` — multi-platform price comparison (SeatGeek + Ticketmaster live; StubHub/Vivid Seats pending)
+- `action=monitor` — hot deals across MLB, ranked by discount vs average price
 
 **AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude.
 
