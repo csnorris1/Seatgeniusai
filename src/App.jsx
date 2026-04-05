@@ -151,7 +151,7 @@ export default function SeatGenius() {
 
   useEffect(() => {
     setLoadingDeals(true);
-    fetch(`${AWS_URL}/monitor?action=monitor`)
+    fetch(`${AWS_URL}/search?action=monitor`)
       .then(res => res.json())
       .then(data => setDeals((data.deals || []).slice(0, 5)))
       .catch(() => {})

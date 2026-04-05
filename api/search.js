@@ -60,20 +60,55 @@ exports.handler = async (event) => {
         `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
-      const events = (data.events || []).map(e => ({
-        id: e.id,
-        source: 'seatgeek',
-        title: e.title,
-        short_title: e.short_title,
-        datetime_local: e.datetime_local,
-        venue: e.venue?.name,
-        city: e.venue?.city,
-        state: e.venue?.state,
-        lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
-        average_price: e.stats?.average_price || null,
-        highest_price: e.stats?.highest_price || null,
-        url: e.url
-      }));
+
+      // Fetch Ticketmaster prices for the team to fill in missing SeatGeek stats
+      let tmPriceMap = {};
+      try {
+        const tmUrl = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(team)}&classificationName=Baseball&size=20&sort=date,asc&startDateTime=${today}T00:00:00Z`;
+        const tmRes = await fetch(tmUrl);
+        if (tmRes.ok) {
+          const tmData = await tmRes.json();
+          const tmEvents = tmData?._embedded?.events || [];
+          for (const tme of tmEvents) {
+            const tmDate = tme.dates?.start?.localDate || '';
+            const ranges = (tme.priceRanges || []).filter(p => p.type === 'standard' || !p.type);
+            if (ranges.length > 0 && tmDate) {
+              const mins = ranges.map(p => p.min).filter(Boolean);
+              const maxes = ranges.map(p => p.max).filter(Boolean);
+              tmPriceMap[tmDate] = {
+                lowest: mins.length > 0 ? Math.min(...mins) : null,
+                highest: maxes.length > 0 ? Math.max(...maxes) : null,
+                url: tme.url || null,
+              };
+            }
+          }
+        }
+      } catch { /* Ticketmaster fetch failed, continue with SeatGeek data only */ }
+
+      const events = (data.events || []).map(e => {
+        const sgLowest = e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null;
+        const sgAvg = e.stats?.average_price || null;
+        const sgHighest = e.stats?.highest_price || null;
+        const eventDate = e.datetime_local ? e.datetime_local.split('T')[0] : '';
+        const tm = tmPriceMap[eventDate] || null;
+
+        return {
+          id: e.id,
+          source: 'seatgeek',
+          title: e.title,
+          short_title: e.short_title,
+          datetime_local: e.datetime_local,
+          venue: e.venue?.name,
+          city: e.venue?.city,
+          state: e.venue?.state,
+          lowest_price: sgLowest || (tm && tm.lowest) || null,
+          average_price: sgAvg,
+          highest_price: sgHighest || (tm && tm.highest) || null,
+          price_source: sgLowest ? 'seatgeek' : (tm && tm.lowest) ? 'ticketmaster' : null,
+          url: e.url,
+          ticketmaster_url: tm?.url || null,
+        };
+      });
       return respond(200, { events });
     }
 
@@ -196,6 +231,87 @@ exports.handler = async (event) => {
         platforms,
         best_platform,
       });
+    }
+
+    if (action === 'monitor') {
+      const today = new Date().toISOString().split('T')[0];
+      const sgUrl = team
+        ? `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=10&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
+        : `https://api.seatgeek.com/2/events?type=mlb&per_page=20&sort=score.desc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`;
+
+      const sgResponse = await fetch(sgUrl);
+      const sgData = await sgResponse.json();
+
+      // Also fetch Ticketmaster for popular MLB events
+      let tmEvents = [];
+      try {
+        const tmUrl = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&classificationName=Baseball&size=20&sort=relevance,desc&startDateTime=${today}T00:00:00Z`;
+        const tmRes = await fetch(tmUrl);
+        if (tmRes.ok) {
+          const tmData = await tmRes.json();
+          tmEvents = tmData?._embedded?.events || [];
+        }
+      } catch { /* Ticketmaster fetch failed, continue with SeatGeek data only */ }
+
+      // Build Ticketmaster price map by date+keyword
+      const tmPriceByDate = {};
+      for (const tme of tmEvents) {
+        const tmDate = tme.dates?.start?.localDate || '';
+        const ranges = (tme.priceRanges || []).filter(p => p.type === 'standard' || !p.type);
+        if (ranges.length > 0 && tmDate) {
+          const mins = ranges.map(p => p.min).filter(Boolean);
+          const maxes = ranges.map(p => p.max).filter(Boolean);
+          if (!tmPriceByDate[tmDate]) tmPriceByDate[tmDate] = [];
+          tmPriceByDate[tmDate].push({
+            name: tme.name,
+            lowest: mins.length > 0 ? Math.min(...mins) : null,
+            highest: maxes.length > 0 ? Math.max(...maxes) : null,
+            url: tme.url || null,
+          });
+        }
+      }
+
+      const deals = (sgData.events || [])
+        .map(e => {
+          const sgLowest = e.stats?.lowest_price || null;
+          const sgAvg = e.stats?.average_price || null;
+          const eventDate = e.datetime_local ? e.datetime_local.split('T')[0] : '';
+          const tmMatch = (tmPriceByDate[eventDate] || [])[0] || null;
+          const lowest = sgLowest || (tmMatch && tmMatch.lowest) || null;
+          const average = sgAvg || (tmMatch && tmMatch.highest ? Math.round((tmMatch.lowest + tmMatch.highest) / 2) : null);
+
+          if (!lowest || !average) return null;
+
+          const ratio = lowest / average;
+          let deal_rating;
+          if (ratio <= 0.4) deal_rating = 'great';
+          else if (ratio <= 0.6) deal_rating = 'good';
+          else if (ratio <= 0.8) deal_rating = 'fair';
+          else deal_rating = 'average';
+
+          return {
+            id: e.id,
+            title: e.short_title || e.title,
+            datetime_local: e.datetime_local,
+            venue: e.venue?.name,
+            city: e.venue?.city,
+            state: e.venue?.state,
+            lowest_price: lowest,
+            average_price: average,
+            median_price: e.stats?.median_price || null,
+            highest_price: e.stats?.highest_price || (tmMatch && tmMatch.highest) || null,
+            deal_rating,
+            discount_pct: Math.round((1 - ratio) * 100),
+            url: e.url,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const order = { great: 0, good: 1, fair: 2, average: 3 };
+          return (order[a.deal_rating] || 3) - (order[b.deal_rating] || 3);
+        });
+
+      return respond(200, { deals, checked_at: new Date().toISOString() });
     }
 
     return respond(400, { error: 'Invalid action' });

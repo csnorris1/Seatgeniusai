@@ -39,18 +39,13 @@ jobs:
             --runtime nodejs20.x \
             --region us-east-2
 
-      - name: Package and deploy monitor Lambda
+      - name: Verify deployment
         run: |
-          zip -j monitor.zip api/monitor.js
-          aws lambda update-function-code \
-            --function-name seatgenius-monitor \
-            --zip-file fileb://monitor.zip \
-            --region us-east-2
-          aws lambda wait function-updated \
-            --function-name seatgenius-monitor \
-            --region us-east-2
-          aws lambda update-function-configuration \
-            --function-name seatgenius-monitor \
-            --handler monitor.handler \
-            --runtime nodejs20.x \
-            --region us-east-2
+          sleep 5
+          RESPONSE=$(curl -s -w "\n%{http_code}" "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=events&team=Yankees")
+          STATUS=$(echo "$RESPONSE" | tail -1)
+          echo "API status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::API returned $STATUS after deploy"
+            exit 1
+          fi
