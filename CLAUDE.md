@@ -26,9 +26,12 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 ## API Keys & URLs
 
 - AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
+- SeatGeek API Base: https://api.seatgeek.com/2
 - SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (active, used for events + listings + comparison)
-- Anthropic model: claude-sonnet-4-20250514
+- Ticketmaster API Base: https://app.ticketmaster.com/discovery/v2
 - Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk (active, used for primary market pricing in listings + compare)
+- Anthropic API Endpoint: https://api.anthropic.com/v1/messages (called directly from frontend)
+- Anthropic model: claude-sonnet-4-20250514
 
 ## Product Roadmap
 
@@ -55,6 +58,31 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - ESLint rule: unused vars are errors, except those starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`)
 - The Lambda uses `fetch` (Node 18+ built-in), not `https` or axios
 - SeatGeek event IDs are used as-is (no prefixing)
+
+## Daily Standup Command
+
+When asked to run a standup or daily check-in:
+1. Check GitHub Issues for the repo (`csnorris1/Seatgeniusai`) — list open issues sorted by priority
+2. Identify which issues are actionable now (not blocked, not waiting on external dependencies)
+3. Pick the highest-priority unblocked issue and begin work
+4. Report: what was done last session, what's planned now, and any blockers
+
+## Agent Behavior
+
+- Always commit and push directly to `main`. Never create pull requests. Never ask for PR approval.
+- Before starting any task, check GitHub Issues for `csnorris1/Seatgeniusai` to see if there's a relevant open issue.
+- Skip issues that are blocked (labeled `blocked`, or depend on external actions like affiliate approvals).
+- Work autonomously — pick up the next actionable issue, implement, commit, and push.
+- If an issue requires manual action (e.g., signing up for an API, configuring DNS), label it and move on.
+
+## Task Labeling Convention
+
+Use these prefixes in commit messages and issue comments to indicate who did the work:
+
+- 🤖 **AGENT** — Work done autonomously by Claude Code (e.g., `🤖 AGENT: Add hot deals endpoint`)
+- 👤 **MANUAL** — Work done by a human (e.g., `👤 MANUAL: Configure DNS for SeatGenius.net`)
+
+This makes it easy to audit the git log and see what was automated vs. manual.
 
 ## Git Workflow
 
