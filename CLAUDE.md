@@ -60,6 +60,10 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 Always commit and push directly to main branch. Never create pull requests. Never ask for PR approval.
 
+## Agent Behavior
+
+- Always check if an issue is blocked before working on it. If blocked, skip it and move to the next unblocked issue.
+
 ## CI / Monitoring
 
 - `.github/workflows/site-monitor.yml` — runs hourly, checks frontend (Vercel) and both API endpoints
