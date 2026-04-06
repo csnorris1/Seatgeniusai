@@ -54,6 +54,47 @@ exports.handler = async (event) => {
   }
 
   try {
+    if (action === 'debug_sg') {
+      const testId = event_id || '17695149';
+      const results = {};
+
+      // Test 1: Event detail with stats
+      const r1 = await fetch(`https://api.seatgeek.com/2/events/${testId}?client_id=${SEATGEEK_CLIENT_ID}`);
+      const d1 = await r1.json();
+      results.event_stats = d1.stats || null;
+      results.event_title = d1.short_title || d1.title;
+
+      // Test 2: Check if /listings sub-resource exists
+      try {
+        const r2 = await fetch(`https://api.seatgeek.com/2/events/${testId}/listings?client_id=${SEATGEEK_CLIENT_ID}`);
+        results.listings_status = r2.status;
+        const d2 = await r2.text();
+        results.listings_body = d2.slice(0, 500);
+      } catch (e) { results.listings_error = e.message; }
+
+      // Test 3: Recommendations endpoint
+      try {
+        const r3 = await fetch(`https://api.seatgeek.com/2/recommendations?client_id=${SEATGEEK_CLIENT_ID}&event_id=${testId}`);
+        results.recs_status = r3.status;
+        const d3 = await r3.text();
+        results.recs_body = d3.slice(0, 500);
+      } catch (e) { results.recs_error = e.message; }
+
+      // Test 4: High-score events with prices (any sport, any date)
+      const r4 = await fetch(`https://api.seatgeek.com/2/events?per_page=5&sort=score.desc&client_id=${SEATGEEK_CLIENT_ID}`);
+      const d4 = await r4.json();
+      results.top_events = (d4.events || []).map(e => ({
+        title: e.short_title,
+        date: e.datetime_local,
+        type: e.type,
+        lowest: e.stats?.lowest_price,
+        avg: e.stats?.average_price,
+        listing_count: e.stats?.listing_count,
+      }));
+
+      return respond(200, results);
+    }
+
     if (action === 'events') {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(
