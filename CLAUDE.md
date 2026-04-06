@@ -28,7 +28,7 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
 - SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (active, used for events + listings + comparison)
 - Anthropic model: claude-sonnet-4-20250514
-- Ticketmaster API Key: P3rAzOUuGoJ7XcIfaWkp7Dz2DLG1te1j (wired into listings/compare actions but still returning 401 Invalid ApiKey from Lambda — Ticketmaster account activation issue)
+- Ticketmaster API Key: P3rAzoUuGoJ7XcIfaWkp7Dz2DLG1te1j (wired into listings/compare actions but still returning 401 Invalid ApiKey from Lambda — Ticketmaster account activation issue)
 
 ## Product Roadmap
 

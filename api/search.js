@@ -2,7 +2,7 @@ exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
   const { action, team, event_id } = params;
   const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
-  const TICKETMASTER_API_KEY = 'P3rAzOUuGoJ7XcIfaWkp7Dz2DLG1te1j';
+  const TICKETMASTER_API_KEY = 'P3rAzoUuGoJ7XcIfaWkp7Dz2DLG1te1j';
 
   const respond = (statusCode, body) => ({
     statusCode,
