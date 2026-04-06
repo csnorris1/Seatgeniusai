@@ -106,7 +106,6 @@ export default function SeatGenius() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [listings, setListings] = useState([]);
   const [buyUrl, setBuyUrl] = useState(null);
-  const [tmUrl, setTmUrl] = useState(null);
   const [loadingListings, setLoadingListings] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
@@ -127,7 +126,6 @@ export default function SeatGenius() {
     setSelectedEvent(event);
     setListings([]);
     setBuyUrl(null);
-    setTmUrl(null);
     setResult(null);
     setPlatforms([]);
     setBestPlatform(null);
@@ -140,7 +138,6 @@ export default function SeatGenius() {
       const listingsData = await listingsRes.json();
       setListings(listingsData.listings || []);
       setBuyUrl(listingsData.buy_url || null);
-      setTmUrl(listingsData.ticketmaster_url || null);
       const compareData = await compareRes.json();
       setPlatforms(compareData.platforms || []);
       setBestPlatform(compareData.best_platform || null);
@@ -203,7 +200,6 @@ Be direct and opinionated. Bold the key insights.`
     setResult(null);
     setError(null);
     setBuyUrl(null);
-    setTmUrl(null);
     setPlatforms([]);
     setBestPlatform(null);
   };
@@ -278,7 +274,7 @@ Be direct and opinionated. Bold the key insights.`
                   <div className="listings-box">
                     {listings.length > 0 ? (
                       <>
-                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · SeatGeek + Ticketmaster</div>
+                        <div className="listings-label">{listings.length} price tier{listings.length !== 1 ? 's' : ''} found · via SeatGeek</div>
                         {listings.map((l, i) => (
                           <div className="listing-row" key={i}>
                             <div className="listing-section">
@@ -291,18 +287,11 @@ Be direct and opinionated. Bold the key insights.`
                             </div>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                          {buyUrl && (
-                            <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
-                              Buy on SeatGeek →
-                            </a>
-                          )}
-                          {tmUrl && (
-                            <a href={tmUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
-                              Buy on Ticketmaster →
-                            </a>
-                          )}
-                        </div>
+                        {buyUrl && (
+                          <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn">
+                            Buy on SeatGeek →
+                          </a>
+                        )}
                       </>
                     ) : (
                       <div className="no-listings">No ticket prices available yet for this game.</div>
@@ -313,17 +302,14 @@ Be direct and opinionated. Bold the key insights.`
                     <div className="listings-box" style={{ marginTop: 12 }}>
                       <div className="listings-label">Price Comparison Across Platforms</div>
                       {platforms.map((p, i) => (
-                        <div className="listing-row" key={i} style={{ opacity: p.status === 'pending_affiliate' || p.status === 'no_data' ? 0.4 : 1 }}>
+                        <div className="listing-row" key={i} style={{ opacity: p.status ? 0.4 : 1 }}>
                           <div className="listing-section" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {p.platform}
                             {p.platform === bestPlatform && (
                               <span style={{ fontSize: 10, fontWeight: 700, color: '#50c878', background: 'rgba(80,200,120,0.12)', padding: '2px 6px', borderRadius: 3, letterSpacing: 1 }}>BEST</span>
                             )}
-                            {p.status === 'pending_affiliate' && (
+                            {p.status && (
                               <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>coming soon</span>
-                            )}
-                            {p.status === 'no_data' && (
-                              <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>no data</span>
                             )}
                           </div>
                           <div>
