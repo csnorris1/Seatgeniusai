@@ -54,27 +54,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    if (action === 'debug_tm') {
-      const keyword = team || 'Yankees';
-      const today = new Date().toISOString().split('T')[0];
-      const urls = [
-        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(keyword)}&classificationName=Baseball&size=5&sort=date,asc&startDateTime=${today}T00:00:00Z`,
-        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(keyword)}&size=5`,
-        `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&classificationName=Baseball&size=3`,
-      ];
-      const results = [];
-      for (const url of urls) {
-        try {
-          const res = await fetch(url);
-          const body = await res.text();
-          results.push({ url: url.replace(TICKETMASTER_API_KEY, 'REDACTED'), status: res.status, body: body.slice(0, 500) });
-        } catch (e) {
-          results.push({ url: url.replace(TICKETMASTER_API_KEY, 'REDACTED'), error: e.message });
-        }
-      }
-      return respond(200, { today, results });
-    }
-
     if (action === 'events') {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(

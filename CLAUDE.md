@@ -28,7 +28,7 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
 - SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (active, used for events + listings + comparison)
 - Anthropic model: claude-sonnet-4-20250514
-- Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk (active, used for primary market pricing in listings + compare)
+- Ticketmaster API Key: l87nPH1XY6rgyddM3MlzeAJoRGJ30Szk (returning 401 Invalid ApiKey from Lambda — needs new key)
 
 ## Product Roadmap
 
@@ -47,6 +47,7 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 ## Known Issues
 
 - SeatGeek free tier doesn't always return price stats for all games (fallbacks added: lowest_sg_base_price, average_price)
+- Ticketmaster API key returning 401 Invalid ApiKey from Lambda — enrichment code is in place but needs a valid key
 - SeatGenius.net domain not yet pointed to Vercel
 - Need affiliate program approval for resale pricing data
 
