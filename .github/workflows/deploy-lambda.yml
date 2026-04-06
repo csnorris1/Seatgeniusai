@@ -36,7 +36,7 @@ jobs:
           aws lambda update-function-configuration \
             --function-name seatgenius-search \
             --handler search.handler \
-            --runtime nodejs20.x \
+            --runtime nodejs22.x \
             --region us-east-2
 
       - name: Verify deployment
