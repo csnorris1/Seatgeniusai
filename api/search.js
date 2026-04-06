@@ -43,6 +43,13 @@ exports.handler = async (event) => {
   }
 
   try {
+    if (action === 'tm_test') {
+      const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=Cubs&classificationName=Baseball&size=3&sort=date,asc`;
+      const r = await fetch(url);
+      const body = await r.text();
+      return respond(200, { status: r.status, body: body.slice(0, 2000) });
+    }
+
     if (action === 'events') {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(
