@@ -54,23 +54,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    if (action === 'debug_tm') {
-      const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&size=1`;
-      const res = await fetch(url);
-      const headers = {};
-      res.headers.forEach((v, k) => { headers[k] = v; });
-      const body = await res.text();
-      return respond(200, {
-        request_url: url.replace(TICKETMASTER_API_KEY, 'KEY_' + TICKETMASTER_API_KEY.slice(-6)),
-        key_length: TICKETMASTER_API_KEY.length,
-        key_first4: TICKETMASTER_API_KEY.slice(0, 4),
-        key_last4: TICKETMASTER_API_KEY.slice(-4),
-        status: res.status,
-        response_headers: headers,
-        body: body.slice(0, 1000),
-      });
-    }
-
     if (action === 'events') {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(
