@@ -2,6 +2,7 @@ exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
   const { action, team, event_id } = params;
   const SEATGEEK_CLIENT_ID = 'NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky';
+  const TICKETMASTER_API_KEY = 'P3rAzOUuGoJ7XcIfaWkp7Dz2DLG1te1j';
 
   const respond = (statusCode, body) => ({
     statusCode,
@@ -15,6 +16,30 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') {
     return respond(200, {});
+  }
+
+  async function fetchTicketmasterPrices(keyword, date) {
+    try {
+      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(keyword)}&classificationName=Baseball&size=5&sort=date,asc`;
+      if (date) url += `&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const events = data?._embedded?.events;
+      if (!events || events.length === 0) return null;
+      const ev = events[0];
+      const ranges = (ev.priceRanges || []).filter(p => p.type === 'standard' || !p.type);
+      if (ranges.length === 0) return { lowest_price: null, highest_price: null, buy_url: ev.url || null };
+      const mins = ranges.map(p => p.min).filter(Boolean);
+      const maxes = ranges.map(p => p.max).filter(Boolean);
+      return {
+        lowest_price: mins.length > 0 ? Math.min(...mins) : null,
+        highest_price: maxes.length > 0 ? Math.max(...maxes) : null,
+        buy_url: ev.url || null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   try {
@@ -60,9 +85,23 @@ exports.handler = async (event) => {
         listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'SeatGeek' });
       }
 
+      const eventTitle = data.short_title || data.title || '';
+      const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
+      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
+
+      if (tmData && tmData.lowest_price) {
+        listings.push({
+          section: 'Primary Market',
+          price: tmData.lowest_price,
+          max_price: tmData.highest_price || tmData.lowest_price,
+          source: 'Ticketmaster',
+        });
+      }
+
       return respond(200, {
         listings,
         buy_url: data.url || null,
+        ticketmaster_url: tmData?.buy_url || null,
         event_title: data.short_title || data.title || null,
         venue: data.venue?.name || null,
         datetime_local: data.datetime_local || null,
@@ -89,17 +128,32 @@ exports.handler = async (event) => {
         buy_url: data.url || null,
       });
 
-      // Ticketmaster key currently returning 401 — placeholder until key is fixed
-      platforms.push({
-        platform: 'Ticketmaster',
-        lowest_price: null,
-        average_price: null,
-        median_price: null,
-        highest_price: null,
-        listing_count: null,
-        buy_url: null,
-        status: 'api_key_issue',
-      });
+      const eventTitle = data.short_title || data.title || '';
+      const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
+      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
+
+      if (tmData && tmData.lowest_price) {
+        platforms.push({
+          platform: 'Ticketmaster',
+          lowest_price: tmData.lowest_price,
+          average_price: null,
+          median_price: null,
+          highest_price: tmData.highest_price || null,
+          listing_count: null,
+          buy_url: tmData.buy_url || null,
+        });
+      } else {
+        platforms.push({
+          platform: 'Ticketmaster',
+          lowest_price: null,
+          average_price: null,
+          median_price: null,
+          highest_price: null,
+          listing_count: null,
+          buy_url: tmData?.buy_url || null,
+          status: 'no_data',
+        });
+      }
 
       platforms.push({
         platform: 'StubHub',
