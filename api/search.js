@@ -63,12 +63,15 @@ exports.handler = async (event) => {
 
       // Fetch Ticketmaster prices for the team to fill in missing SeatGeek stats
       let tmPriceMap = {};
+      let tmDebug = { status: null, count: 0, error: null };
       try {
         const tmUrl = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(team)}&classificationName=Baseball&size=20&sort=date,asc&startDateTime=${today}T00:00:00Z`;
         const tmRes = await fetch(tmUrl);
+        tmDebug.status = tmRes.status;
         if (tmRes.ok) {
           const tmData = await tmRes.json();
           const tmEvents = tmData?._embedded?.events || [];
+          tmDebug.count = tmEvents.length;
           for (const tme of tmEvents) {
             const tmDate = tme.dates?.start?.localDate || '';
             const ranges = (tme.priceRanges || []).filter(p => p.type === 'standard' || !p.type);
@@ -83,7 +86,7 @@ exports.handler = async (event) => {
             }
           }
         }
-      } catch { /* Ticketmaster fetch failed, continue with SeatGeek data only */ }
+      } catch (e) { tmDebug.error = e.message; }
 
       const events = (data.events || []).map(e => {
         const sgLowest = e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null;
@@ -109,7 +112,7 @@ exports.handler = async (event) => {
           ticketmaster_url: tm?.url || null,
         };
       });
-      return respond(200, { events });
+      return respond(200, { events, _tm_debug: tmDebug });
     }
 
     if (action === 'listings') {
