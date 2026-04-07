@@ -33,7 +33,18 @@ exports.handler = async (event) => {
       const events = data?._embedded?.events;
       if (!events || events.length === 0) return null;
       // Prefer an event whose name mentions the home team; otherwise take the first
-      const ev = events.find(e => (e.name || '').toLowerCase().includes(homeTeam.toLowerCase())) || events[0];
+      let ev = events.find(e => (e.name || '').toLowerCase().includes(homeTeam.toLowerCase())) || events[0];
+      // The list endpoint frequently omits priceRanges. Fetch the event detail
+      // directly to get reliable pricing info.
+      if (ev.id && (!ev.priceRanges || ev.priceRanges.length === 0)) {
+        try {
+          const detailRes = await fetch(`https://app.ticketmaster.com/discovery/v2/events/${ev.id}.json?apikey=${TICKETMASTER_API_KEY}`);
+          if (detailRes.ok) {
+            const detail = await detailRes.json();
+            if (detail) ev = { ...ev, ...detail };
+          }
+        } catch { /* ignore */ }
+      }
       // Use all priceRanges (Ticketmaster returns various types: standard, resale, vip, etc.)
       const ranges = ev.priceRanges || [];
       const mins = ranges.map(p => p.min).filter(v => typeof v === 'number');
