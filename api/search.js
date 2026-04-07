@@ -32,8 +32,15 @@ exports.handler = async (event) => {
       const data = await response.json();
       const events = data?._embedded?.events;
       if (!events || events.length === 0) return null;
-      // Prefer an event whose name mentions the home team; otherwise take the first
-      let ev = events.find(e => (e.name || '').toLowerCase().includes(homeTeam.toLowerCase())) || events[0];
+      // Prefer a base game event. Exclude stadium tours, premium-seating
+      // repackages, and pass products which clutter TM search results.
+      const home = homeTeam.toLowerCase();
+      const isTour = (n) => /tour|pinstripe pass|premium seating/i.test(n || '');
+      const mentionsHome = (n) => (n || '').toLowerCase().includes(home);
+      let ev =
+        events.find(e => mentionsHome(e.name) && !isTour(e.name)) ||
+        events.find(e => !isTour(e.name)) ||
+        events[0];
       // The list endpoint frequently omits priceRanges. Fetch the event detail
       // directly to get reliable pricing info.
       if (ev.id && (!ev.priceRanges || ev.priceRanges.length === 0)) {
@@ -193,43 +200,6 @@ exports.handler = async (event) => {
         event_title: data.short_title || data.title || null,
         platforms,
         best_platform,
-      });
-    }
-
-    if (action === 'tm_debug') {
-      const kw = params.keyword || 'New York Yankees';
-      const date = params.date || '';
-      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(kw)}&classificationName=Baseball&size=5&sort=date,asc`;
-      if (date) url += `&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z`;
-      const r = await fetch(url);
-      const listBody = await r.text();
-      let listJson;
-      try { listJson = JSON.parse(listBody); } catch { listJson = null; }
-      const firstId = listJson?._embedded?.events?.[0]?.id || null;
-      let detailJson = null;
-      if (firstId) {
-        const dr = await fetch(`https://app.ticketmaster.com/discovery/v2/events/${firstId}.json?apikey=${TICKETMASTER_API_KEY}`);
-        const dt = await dr.text();
-        try { detailJson = JSON.parse(dt); } catch { detailJson = { raw: dt.slice(0, 500) }; }
-      }
-      const evs = listJson?._embedded?.events || [];
-      return respond(200, {
-        list_status: r.status,
-        list_count: evs.length,
-        events: evs.map(e => ({
-          id: e.id,
-          name: e.name,
-          type: e.type,
-          classifications: (e.classifications || []).map(c => ({
-            segment: c.segment?.name,
-            genre: c.genre?.name,
-            subGenre: c.subGenre?.name,
-          })),
-          priceRanges: e.priceRanges || null,
-          url: e.url,
-          dates: e.dates?.start?.localDate,
-        })),
-        detail_priceRanges: detailJson?.priceRanges || null,
       });
     }
 

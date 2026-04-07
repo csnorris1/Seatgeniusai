@@ -313,14 +313,17 @@ Be direct and opinionated. Bold the key insights.`
                     <div className="listings-box" style={{ marginTop: 12 }}>
                       <div className="listings-label">Price Comparison Across Platforms</div>
                       {platforms.map((p, i) => (
-                        <div className="listing-row" key={i} style={{ opacity: p.status ? 0.4 : 1 }}>
+                        <div className="listing-row" key={i} style={{ opacity: p.status === 'pending_affiliate' ? 0.4 : 1 }}>
                           <div className="listing-section" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {p.platform}
                             {p.platform === bestPlatform && (
                               <span style={{ fontSize: 10, fontWeight: 700, color: '#50c878', background: 'rgba(80,200,120,0.12)', padding: '2px 6px', borderRadius: 3, letterSpacing: 1 }}>BEST</span>
                             )}
-                            {p.status && (
+                            {p.status === 'pending_affiliate' && (
                               <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>coming soon</span>
+                            )}
+                            {p.status === 'no_data' && p.buy_url && (
+                              <span style={{ fontSize: 10, color: 'rgba(240,237,230,0.3)', fontStyle: 'italic' }}>price on site</span>
                             )}
                           </div>
                           <div>
@@ -329,6 +332,10 @@ Be direct and opinionated. Bold the key insights.`
                                 <div className="listing-price">${p.lowest_price}{p.highest_price ? ` – $${p.highest_price}` : ''}</div>
                                 {p.buy_url && <a href={p.buy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#4a7aff', textDecoration: 'none' }}>Buy →</a>}
                               </>
+                            ) : p.buy_url ? (
+                              <a href={p.buy_url} target="_blank" rel="noopener noreferrer" className="listing-price" style={{ fontSize: 14, color: '#4a7aff', textDecoration: 'none' }}>
+                                View →
+                              </a>
                             ) : (
                               <div className="listing-price" style={{ color: 'rgba(240,237,230,0.25)' }}>—</div>
                             )}
