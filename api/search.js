@@ -196,6 +196,33 @@ exports.handler = async (event) => {
       });
     }
 
+    if (action === 'tm_debug') {
+      const kw = params.keyword || 'New York Yankees';
+      const date = params.date || '';
+      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(kw)}&classificationName=Baseball&size=5&sort=date,asc`;
+      if (date) url += `&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z`;
+      const r = await fetch(url);
+      const listBody = await r.text();
+      let listJson;
+      try { listJson = JSON.parse(listBody); } catch { listJson = null; }
+      const firstId = listJson?._embedded?.events?.[0]?.id || null;
+      let detailJson = null;
+      if (firstId) {
+        const dr = await fetch(`https://app.ticketmaster.com/discovery/v2/events/${firstId}.json?apikey=${TICKETMASTER_API_KEY}`);
+        const dt = await dr.text();
+        try { detailJson = JSON.parse(dt); } catch { detailJson = { raw: dt.slice(0, 500) }; }
+      }
+      return respond(200, {
+        list_status: r.status,
+        list_count: listJson?._embedded?.events?.length || 0,
+        first_event_name: listJson?._embedded?.events?.[0]?.name || null,
+        first_event_id: firstId,
+        first_event_priceRanges: listJson?._embedded?.events?.[0]?.priceRanges || null,
+        detail_priceRanges: detailJson?.priceRanges || null,
+        detail_name: detailJson?.name || null,
+      });
+    }
+
     if (action === 'monitor') {
       const today = new Date().toISOString().split('T')[0];
       const sgUrl = team
