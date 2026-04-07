@@ -212,14 +212,24 @@ exports.handler = async (event) => {
         const dt = await dr.text();
         try { detailJson = JSON.parse(dt); } catch { detailJson = { raw: dt.slice(0, 500) }; }
       }
+      const evs = listJson?._embedded?.events || [];
       return respond(200, {
         list_status: r.status,
-        list_count: listJson?._embedded?.events?.length || 0,
-        first_event_name: listJson?._embedded?.events?.[0]?.name || null,
-        first_event_id: firstId,
-        first_event_priceRanges: listJson?._embedded?.events?.[0]?.priceRanges || null,
+        list_count: evs.length,
+        events: evs.map(e => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          classifications: (e.classifications || []).map(c => ({
+            segment: c.segment?.name,
+            genre: c.genre?.name,
+            subGenre: c.subGenre?.name,
+          })),
+          priceRanges: e.priceRanges || null,
+          url: e.url,
+          dates: e.dates?.start?.localDate,
+        })),
         detail_priceRanges: detailJson?.priceRanges || null,
-        detail_name: detailJson?.name || null,
       });
     }
 
