@@ -20,18 +20,24 @@ exports.handler = async (event) => {
 
   async function fetchTicketmasterPrices(keyword, date) {
     try {
-      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(keyword)}&classificationName=Baseball&size=5&sort=date,asc`;
+      // Extract home team from "Away at Home" format if applicable
+      const homeTeam = keyword && keyword.includes(' at ')
+        ? keyword.split(' at ').pop().trim()
+        : keyword;
+
+      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(homeTeam)}&classificationName=Baseball&size=10&sort=date,asc`;
       if (date) url += `&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z`;
       const response = await fetch(url);
       if (!response.ok) return null;
       const data = await response.json();
       const events = data?._embedded?.events;
       if (!events || events.length === 0) return null;
-      const ev = events[0];
-      const ranges = (ev.priceRanges || []).filter(p => p.type === 'standard' || !p.type);
-      if (ranges.length === 0) return { lowest_price: null, highest_price: null, buy_url: ev.url || null };
-      const mins = ranges.map(p => p.min).filter(Boolean);
-      const maxes = ranges.map(p => p.max).filter(Boolean);
+      // Prefer an event whose name mentions the home team; otherwise take the first
+      const ev = events.find(e => (e.name || '').toLowerCase().includes(homeTeam.toLowerCase())) || events[0];
+      // Use all priceRanges (Ticketmaster returns various types: standard, resale, vip, etc.)
+      const ranges = ev.priceRanges || [];
+      const mins = ranges.map(p => p.min).filter(v => typeof v === 'number');
+      const maxes = ranges.map(p => p.max).filter(v => typeof v === 'number');
       return {
         lowest_price: mins.length > 0 ? Math.min(...mins) : null,
         highest_price: maxes.length > 0 ? Math.max(...maxes) : null,
@@ -85,7 +91,7 @@ exports.handler = async (event) => {
         listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'SeatGeek' });
       }
 
-      const eventTitle = data.short_title || data.title || '';
+      const eventTitle = data.title || data.short_title || '';
       const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
       const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
 
@@ -128,7 +134,7 @@ exports.handler = async (event) => {
         buy_url: data.url || null,
       });
 
-      const eventTitle = data.short_title || data.title || '';
+      const eventTitle = data.title || data.short_title || '';
       const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
       const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
 
