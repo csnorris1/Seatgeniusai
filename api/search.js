@@ -203,6 +203,33 @@ exports.handler = async (event) => {
       });
     }
 
+    if (action === 'sg_debug') {
+      const eid = params.event_id || '17691523';
+      const detailRes = await fetch(`https://api.seatgeek.com/2/events/${eid}?client_id=${SEATGEEK_CLIENT_ID}`);
+      const detailJson = await detailRes.json();
+      const listRes = await fetch(`https://api.seatgeek.com/2/events?type=mlb&per_page=3&sort=datetime_local.asc&client_id=${SEATGEEK_CLIENT_ID}`);
+      const listJson = await listRes.json();
+      return respond(200, {
+        detail_status: detailRes.status,
+        detail_keys: Object.keys(detailJson || {}),
+        detail_stats: detailJson?.stats || null,
+        detail_taxonomies: detailJson?.taxonomies || null,
+        detail_status_field: detailJson?.status,
+        detail_visible_until: detailJson?.visible_until,
+        detail_announce_date: detailJson?.announce_date,
+        detail_id: detailJson?.id,
+        detail_title: detailJson?.title,
+        list_status: listRes.status,
+        list_first_event: listJson?.events?.[0] ? {
+          id: listJson.events[0].id,
+          title: listJson.events[0].title,
+          stats: listJson.events[0].stats,
+          status: listJson.events[0].status,
+          datetime_local: listJson.events[0].datetime_local,
+        } : null,
+      });
+    }
+
     if (action === 'monitor') {
       const today = new Date().toISOString().split('T')[0];
       const sgUrl = team
