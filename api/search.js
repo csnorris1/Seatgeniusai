@@ -207,26 +207,37 @@ exports.handler = async (event) => {
       const eid = params.event_id || '17691523';
       const detailRes = await fetch(`https://api.seatgeek.com/2/events/${eid}?client_id=${SEATGEEK_CLIENT_ID}`);
       const detailJson = await detailRes.json();
-      const listRes = await fetch(`https://api.seatgeek.com/2/events?type=mlb&per_page=3&sort=datetime_local.asc&client_id=${SEATGEEK_CLIENT_ID}`);
-      const listJson = await listRes.json();
+      // Try alternate endpoints
+      const listingsRes = await fetch(`https://api.seatgeek.com/2/listings?event_id=${eid}&per_page=5&client_id=${SEATGEEK_CLIENT_ID}`);
+      const listingsBody = await listingsRes.text();
+      let listingsJson = null;
+      try { listingsJson = JSON.parse(listingsBody); } catch { listingsJson = { raw: listingsBody.slice(0, 300) }; }
+      // Try with sort filters
+      const popListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&per_page=5&sort=score.desc&client_id=${SEATGEEK_CLIENT_ID}`);
+      const popListJson = await popListRes.json();
       return respond(200, {
         detail_status: detailRes.status,
-        detail_keys: Object.keys(detailJson || {}),
-        detail_stats: detailJson?.stats || null,
-        detail_taxonomies: detailJson?.taxonomies || null,
-        detail_status_field: detailJson?.status,
-        detail_visible_until: detailJson?.visible_until,
-        detail_announce_date: detailJson?.announce_date,
-        detail_id: detailJson?.id,
-        detail_title: detailJson?.title,
-        list_status: listRes.status,
-        list_first_event: listJson?.events?.[0] ? {
-          id: listJson.events[0].id,
-          title: listJson.events[0].title,
-          stats: listJson.events[0].stats,
-          status: listJson.events[0].status,
-          datetime_local: listJson.events[0].datetime_local,
-        } : null,
+        detail_stats: detailJson?.stats,
+        detail_stats_keys: Object.keys(detailJson?.stats || {}),
+        detail_ticketmaster: detailJson?.ticketmaster || null,
+        detail_themes: detailJson?.themes || null,
+        detail_domain_information: detailJson?.domain_information || null,
+        detail_links: detailJson?.links || null,
+        detail_announcements: detailJson?.announcements || null,
+        detail_event_promotion: detailJson?.event_promotion || null,
+        detail_access_method: detailJson?.access_method || null,
+        detail_visible_until_utc: detailJson?.visible_until_utc,
+        detail_is_visible: detailJson?.is_visible,
+        detail_is_open: detailJson?.is_open,
+        listings_endpoint_status: listingsRes.status,
+        listings_endpoint_body: listingsJson,
+        popular_events: (popListJson?.events || []).slice(0, 3).map(e => ({
+          id: e.id,
+          title: e.title,
+          stats: e.stats,
+          datetime_local: e.datetime_local,
+          score: e.score,
+        })),
       });
     }
 
