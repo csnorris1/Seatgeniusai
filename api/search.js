@@ -213,8 +213,12 @@ exports.handler = async (event) => {
       let listingsJson = null;
       try { listingsJson = JSON.parse(listingsBody); } catch { listingsJson = { raw: listingsBody.slice(0, 300) }; }
       // Try with sort filters
-      const popListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&per_page=5&sort=score.desc&client_id=${SEATGEEK_CLIENT_ID}`);
+      const popListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&listing_count.gt=0&per_page=5&sort=score.desc&client_id=${SEATGEEK_CLIENT_ID}`);
       const popListJson = await popListRes.json();
+      const openListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&per_page=20&sort=datetime_local.asc&client_id=${SEATGEEK_CLIENT_ID}`);
+      const openListJson = await openListRes.json();
+      const openCount = (openListJson?.events || []).filter(e => e.is_open).length;
+      const withListingsCount = (openListJson?.events || []).filter(e => e.stats?.listing_count > 0).length;
       return respond(200, {
         detail_status: detailRes.status,
         detail_stats: detailJson?.stats,
@@ -237,7 +241,13 @@ exports.handler = async (event) => {
           stats: e.stats,
           datetime_local: e.datetime_local,
           score: e.score,
+          is_open: e.is_open,
         })),
+        popular_total_count: popListJson?.meta?.total || 0,
+        open_count_in_first_20: openCount,
+        with_listings_count_in_first_20: withListingsCount,
+        sample_open_event: (openListJson?.events || []).find(e => e.is_open) || null,
+        sample_with_listings: (openListJson?.events || []).find(e => e.stats?.listing_count > 0) || null,
       });
     }
 
