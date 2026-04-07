@@ -305,7 +305,26 @@ Be direct and opinionated. Bold the key insights.`
                         </div>
                       </>
                     ) : (
-                      <div className="no-listings">No ticket prices available yet for this game.</div>
+                      <>
+                        <div className="no-listings" style={{ paddingBottom: 4 }}>
+                          Live marketplace pricing isn't available for this game from our data partners yet.
+                        </div>
+                        <div className="no-listings" style={{ fontSize: 12, paddingTop: 0 }}>
+                          You can still check current prices directly:
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                          {buyUrl && (
+                            <a href={buyUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
+                              View on SeatGeek →
+                            </a>
+                          )}
+                          {tmUrl && (
+                            <a href={tmUrl} target="_blank" rel="noopener noreferrer" className="buy-btn" style={{ flex: 1 }}>
+                              View on Ticketmaster →
+                            </a>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
 

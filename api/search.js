@@ -18,6 +18,29 @@ exports.handler = async (event) => {
     return respond(200, {});
   }
 
+  // Fetch a Ticketmaster event by its TM event ID (preferred path: SeatGeek
+  // gives us the TM ID directly via the `ticketmaster` field on event detail).
+  async function fetchTicketmasterById(tmEventId) {
+    if (!tmEventId) return null;
+    try {
+      const res = await fetch(`https://app.ticketmaster.com/discovery/v2/events/${tmEventId}.json?apikey=${TICKETMASTER_API_KEY}`);
+      if (!res.ok) return null;
+      const ev = await res.json();
+      if (!ev) return null;
+      const ranges = ev.priceRanges || [];
+      const mins = ranges.map(p => p.min).filter(v => typeof v === 'number');
+      const maxes = ranges.map(p => p.max).filter(v => typeof v === 'number');
+      return {
+        lowest_price: mins.length > 0 ? Math.min(...mins) : null,
+        highest_price: maxes.length > 0 ? Math.max(...maxes) : null,
+        buy_url: ev.url || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Fallback: keyword search when SeatGeek doesn't expose a TM event ID.
   async function fetchTicketmasterPrices(keyword, date) {
     try {
       // Extract home team from "Away at Home" format if applicable
@@ -109,9 +132,18 @@ exports.handler = async (event) => {
         listings.push({ section: 'Premium / Lower Level', price: stats.average_price || stats.median_price || stats.highest_price, max_price: stats.highest_price, source: 'SeatGeek' });
       }
 
+      // Prefer the TM event ID surfaced by SeatGeek (much more reliable than
+      // a keyword search). Fall back to keyword search only if SG doesn't
+      // expose a TM ID for this event.
+      const tmEventId = typeof data.ticketmaster === 'string' ? data.ticketmaster : null;
       const eventTitle = data.title || data.short_title || '';
       const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
-      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
+      let tmData = await fetchTicketmasterById(tmEventId);
+      if (!tmData || !tmData.buy_url) {
+        const fallback = await fetchTicketmasterPrices(eventTitle, eventDate);
+        tmData = tmData || fallback || null;
+        if (fallback && (!tmData || !tmData.buy_url)) tmData = fallback;
+      }
 
       if (tmData && tmData.lowest_price) {
         listings.push({
@@ -122,6 +154,11 @@ exports.handler = async (event) => {
         });
       }
 
+      // Marketplace data is gated behind a SeatGeek partner-platform tier;
+      // expose a flag so the frontend can render an honest empty state
+      // instead of a generic "loading" message.
+      const seatgeekHasMarketData = listings.some(l => l.source === 'SeatGeek');
+
       return respond(200, {
         listings,
         buy_url: data.url || null,
@@ -130,6 +167,7 @@ exports.handler = async (event) => {
         venue: data.venue?.name || null,
         datetime_local: data.datetime_local || null,
         listing_count: stats.listing_count || null,
+        seatgeek_has_market_data: seatgeekHasMarketData,
       });
     }
 
@@ -142,6 +180,7 @@ exports.handler = async (event) => {
 
       const platforms = [];
 
+      const sgHasStats = stats.lowest_price != null;
       platforms.push({
         platform: 'SeatGeek',
         lowest_price: stats.lowest_price || null,
@@ -150,11 +189,17 @@ exports.handler = async (event) => {
         highest_price: stats.highest_price || null,
         listing_count: stats.listing_count || null,
         buy_url: data.url || null,
+        ...(sgHasStats ? {} : { status: 'no_data' }),
       });
 
+      const tmEventId = typeof data.ticketmaster === 'string' ? data.ticketmaster : null;
       const eventTitle = data.title || data.short_title || '';
       const eventDate = data.datetime_local ? data.datetime_local.split('T')[0] : '';
-      const tmData = await fetchTicketmasterPrices(eventTitle, eventDate);
+      let tmData = await fetchTicketmasterById(tmEventId);
+      if (!tmData || !tmData.buy_url) {
+        const fallback = await fetchTicketmasterPrices(eventTitle, eventDate);
+        if (fallback) tmData = fallback;
+      }
 
       if (tmData && tmData.lowest_price) {
         platforms.push({
@@ -203,54 +248,6 @@ exports.handler = async (event) => {
       });
     }
 
-    if (action === 'sg_debug') {
-      const eid = params.event_id || '17691523';
-      const detailRes = await fetch(`https://api.seatgeek.com/2/events/${eid}?client_id=${SEATGEEK_CLIENT_ID}`);
-      const detailJson = await detailRes.json();
-      // Try alternate endpoints
-      const listingsRes = await fetch(`https://api.seatgeek.com/2/listings?event_id=${eid}&per_page=5&client_id=${SEATGEEK_CLIENT_ID}`);
-      const listingsBody = await listingsRes.text();
-      let listingsJson = null;
-      try { listingsJson = JSON.parse(listingsBody); } catch { listingsJson = { raw: listingsBody.slice(0, 300) }; }
-      // Try with sort filters
-      const popListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&listing_count.gt=0&per_page=5&sort=score.desc&client_id=${SEATGEEK_CLIENT_ID}`);
-      const popListJson = await popListRes.json();
-      const openListRes = await fetch(`https://api.seatgeek.com/2/events?taxonomies.id=1010100&per_page=20&sort=datetime_local.asc&client_id=${SEATGEEK_CLIENT_ID}`);
-      const openListJson = await openListRes.json();
-      const openCount = (openListJson?.events || []).filter(e => e.is_open).length;
-      const withListingsCount = (openListJson?.events || []).filter(e => e.stats?.listing_count > 0).length;
-      return respond(200, {
-        detail_status: detailRes.status,
-        detail_stats: detailJson?.stats,
-        detail_stats_keys: Object.keys(detailJson?.stats || {}),
-        detail_ticketmaster: detailJson?.ticketmaster || null,
-        detail_themes: detailJson?.themes || null,
-        detail_domain_information: detailJson?.domain_information || null,
-        detail_links: detailJson?.links || null,
-        detail_announcements: detailJson?.announcements || null,
-        detail_event_promotion: detailJson?.event_promotion || null,
-        detail_access_method: detailJson?.access_method || null,
-        detail_visible_until_utc: detailJson?.visible_until_utc,
-        detail_is_visible: detailJson?.is_visible,
-        detail_is_open: detailJson?.is_open,
-        listings_endpoint_status: listingsRes.status,
-        listings_endpoint_body: listingsJson,
-        popular_events: (popListJson?.events || []).slice(0, 3).map(e => ({
-          id: e.id,
-          title: e.title,
-          stats: e.stats,
-          datetime_local: e.datetime_local,
-          score: e.score,
-          is_open: e.is_open,
-        })),
-        popular_total_count: popListJson?.meta?.total || 0,
-        open_count_in_first_20: openCount,
-        with_listings_count_in_first_20: withListingsCount,
-        sample_open_event: (openListJson?.events || []).find(e => e.is_open) || null,
-        sample_with_listings: (openListJson?.events || []).find(e => e.stats?.listing_count > 0) || null,
-      });
-    }
-
     if (action === 'monitor') {
       const today = new Date().toISOString().split('T')[0];
       const sgUrl = team
@@ -260,40 +257,71 @@ exports.handler = async (event) => {
       const response = await fetch(sgUrl);
       const data = await response.json();
 
-      const deals = (data.events || [])
-        .filter(e => e.stats?.lowest_price && e.stats?.average_price)
-        .map(e => {
-          const lowest = e.stats.lowest_price;
-          const average = e.stats.average_price;
-          const ratio = lowest / average;
+      const allEvents = data.events || [];
+      const withPriceStats = allEvents.filter(e => e.stats?.lowest_price && e.stats?.average_price);
 
-          let deal_rating;
-          if (ratio <= 0.4) deal_rating = 'great';
-          else if (ratio <= 0.6) deal_rating = 'good';
-          else if (ratio <= 0.8) deal_rating = 'fair';
-          else deal_rating = 'average';
+      // When SG returns price stats, rank by deal quality (best historical
+      // discounts first). When stats aren't available (free-tier limitation),
+      // fall back to surfacing the highest-popularity upcoming games so the
+      // monitor still has something useful to show.
+      let deals;
+      if (withPriceStats.length > 0) {
+        deals = withPriceStats
+          .map(e => {
+            const lowest = e.stats.lowest_price;
+            const average = e.stats.average_price;
+            const ratio = lowest / average;
 
-          return {
+            let deal_rating;
+            if (ratio <= 0.4) deal_rating = 'great';
+            else if (ratio <= 0.6) deal_rating = 'good';
+            else if (ratio <= 0.8) deal_rating = 'fair';
+            else deal_rating = 'average';
+
+            return {
+              id: e.id,
+              title: e.short_title || e.title,
+              datetime_local: e.datetime_local,
+              venue: e.venue?.name,
+              city: e.venue?.city,
+              state: e.venue?.state,
+              lowest_price: lowest,
+              average_price: average,
+              highest_price: e.stats.highest_price || null,
+              deal_rating,
+              discount_pct: Math.round((1 - ratio) * 100),
+              url: e.url,
+            };
+          })
+          .sort((a, b) => {
+            const order = { great: 0, good: 1, fair: 2, average: 3 };
+            return (order[a.deal_rating] || 3) - (order[b.deal_rating] || 3);
+          });
+      } else {
+        deals = allEvents
+          .slice()
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .map(e => ({
             id: e.id,
             title: e.short_title || e.title,
             datetime_local: e.datetime_local,
             venue: e.venue?.name,
             city: e.venue?.city,
             state: e.venue?.state,
-            lowest_price: lowest,
-            average_price: average,
-            highest_price: e.stats.highest_price || null,
-            deal_rating,
-            discount_pct: Math.round((1 - ratio) * 100),
+            lowest_price: null,
+            average_price: null,
+            highest_price: null,
+            deal_rating: null,
+            discount_pct: null,
             url: e.url,
-          };
-        })
-        .sort((a, b) => {
-          const order = { great: 0, good: 1, fair: 2, average: 3 };
-          return (order[a.deal_rating] || 3) - (order[b.deal_rating] || 3);
-        });
+          }));
+      }
 
-      return respond(200, { deals, checked_at: new Date().toISOString() });
+      return respond(200, {
+        deals,
+        checked_at: new Date().toISOString(),
+        has_price_stats: withPriceStats.length > 0,
+      });
     }
 
     return respond(400, { error: 'Invalid action' });
