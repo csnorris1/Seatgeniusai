@@ -161,6 +161,16 @@ export default function SeatGenius() {
       `${l.section} — from $${l.price}${l.max_price ? ` to $${l.max_price}` : ''} — ${l.source}`
     ).join("\n");
 
+    const gameDay = new Date(selectedEvent.datetime_local).toLocaleDateString("en-US", { weekday: "long" });
+    const demandLevel = selectedEvent.popularity >= 0.9 ? "very high" : selectedEvent.popularity >= 0.7 ? "high" : selectedEvent.popularity >= 0.5 ? "moderate" : "low";
+
+    const altSites = (selectedEvent.provider_links || []).map(l => {
+      if (l.provider === 'stubhub') return `StubHub (event ID: ${l.id})`;
+      if (l.provider === 'vividseats') return `Vivid Seats (event ID: ${l.id})`;
+      return null;
+    }).filter(Boolean);
+    const altSitesText = altSites.length ? altSites.join(", ") : "none available";
+
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -170,20 +180,30 @@ export default function SeatGenius() {
           max_tokens: 1000,
           messages: [{
             role: "user",
-            content: `You are an expert ticket deal analyzer. A user wants the best deal for:
-"${selectedEvent.title}" on ${formatDate(selectedEvent.datetime_local)} at ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}.
+            content: `You are an expert MLB ticket deal analyst. Analyze this game and give a plain-English buying verdict.
 
-Here are current ticket price ranges from SeatGeek:
+**Game:** ${selectedEvent.title}
+**Date:** ${formatDate(selectedEvent.datetime_local)} (${gameDay})
+**Venue:** ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}${selectedEvent.venue_capacity ? ` (capacity: ${selectedEvent.venue_capacity.toLocaleString()})` : ''}
+**Home team:** ${selectedEvent.home_team || 'Unknown'} | **Away team:** ${selectedEvent.away_team || 'Unknown'}
+**Demand level:** ${demandLevel} (SeatGeek popularity score: ${selectedEvent.popularity ? selectedEvent.popularity.toFixed(2) : 'N/A'})
 
-${listingText}
+**Current SeatGeek price tiers:**
+${listingText || "No price data available yet."}
 
-Analyze these and:
-1. **Identify the best value ticket option** — balancing price and experience
-2. **Explain what each price tier gets you** (budget, mid-range, premium)
-3. **Give a buying recommendation** — when to buy, what to avoid
-4. **Give a final verdict** in 1-2 punchy sentences
+**Also listed on:** ${altSitesText}
 
-Be direct and opinionated. Bold the key insights.`
+Based on ALL of this context, provide:
+
+1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, and venue size.
+
+2. **Best value pick** — which tier and why, considering the demand level.
+
+3. **Price check suggestion** — tell the user which other sites to compare prices on (mention ${altSitesText} by name). Be specific: "This game is also on StubHub and Vivid Seats — compare before buying."
+
+4. **Final verdict** — 1-2 punchy sentences. Be direct and opinionated. Should they buy now or wait?
+
+Keep it concise and conversational. Bold the key insights.`
           }]
         })
       });

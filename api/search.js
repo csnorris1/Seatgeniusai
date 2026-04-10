@@ -96,21 +96,33 @@ exports.handler = async (event) => {
         `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
-      const events = (data.events || []).map(e => ({
-        id: e.id,
-        title: e.title,
-        short_title: e.short_title,
-        datetime_local: e.datetime_local,
-        venue: e.venue?.name,
-        city: e.venue?.city,
-        state: e.venue?.state,
-        lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
-        average_price: e.stats?.average_price || null,
-        highest_price: e.stats?.highest_price || null,
-        listing_count: e.stats?.listing_count || null,
-        score: e.score || 0,
-        url: e.url,
-      }));
+      const events = (data.events || []).map(e => {
+        const homeTeam = e.performers?.find(p => p.home_team);
+        const awayTeam = e.performers?.find(p => p.away_team);
+        const providerLinks = (e.links || [])
+          .filter(l => ['stubhub', 'vividseats'].includes(l.provider))
+          .map(l => ({ provider: l.provider, id: l.id }));
+        return {
+          id: e.id,
+          title: e.title,
+          short_title: e.short_title,
+          datetime_local: e.datetime_local,
+          venue: e.venue?.name,
+          city: e.venue?.city,
+          state: e.venue?.state,
+          venue_capacity: e.venue?.capacity || null,
+          popularity: e.popularity || null,
+          score: e.score || 0,
+          home_team: homeTeam?.short_name || homeTeam?.name || null,
+          away_team: awayTeam?.short_name || awayTeam?.name || null,
+          lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
+          average_price: e.stats?.average_price || null,
+          highest_price: e.stats?.highest_price || null,
+          listing_count: e.stats?.listing_count || null,
+          provider_links: providerLinks,
+          url: e.url,
+        };
+      });
       return respond(200, { events });
     }
 
