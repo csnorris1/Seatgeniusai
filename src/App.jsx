@@ -173,7 +173,12 @@ export default function SeatGenius() {
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY || "",
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
@@ -207,9 +212,12 @@ Keep it concise and conversational. Bold the key insights.`
         })
       });
       const data = await res.json();
+      console.log("Anthropic API response status:", res.status);
+      console.log("Anthropic API response body:", JSON.stringify(data, null, 2));
       if (data.content?.[0]?.text) setResult(data.content[0].text);
-      else setError("Couldn't get analysis. Try again.");
-    } catch {
+      else setError(`Couldn't get analysis: ${data.error?.message || JSON.stringify(data.error) || 'Unknown error'}`);
+    } catch (err) {
+      console.error("AI analysis fetch error:", err);
       setError("AI analysis failed. Try again.");
     } finally {
       setAnalyzing(false);
