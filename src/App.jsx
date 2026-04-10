@@ -152,7 +152,6 @@ export default function SeatGenius() {
   };
 
   const handleAnalyze = async () => {
-    if (!listings.length) return;
     setAnalyzing(true);
     setResult(null);
     setError(null);
@@ -389,9 +388,9 @@ Keep it concise and conversational. Bold the key insights.`
                   <button
                     className="analyze-btn"
                     onClick={handleAnalyze}
-                    disabled={!listings.length || analyzing}
+                    disabled={analyzing}
                   >
-                    {analyzing ? "Analyzing..." : listings.length ? `Get AI Deal Analysis →` : "No Listings Yet"}
+                    {analyzing ? "Analyzing..." : "Get AI Deal Analysis →"}
                   </button>
                 </>
               )}
