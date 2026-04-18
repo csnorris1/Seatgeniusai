@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   Calendar,
+  CheckCircle2,
   ExternalLink,
+  Info,
   Loader2,
   MapPin,
   Sparkles,
@@ -11,7 +14,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
@@ -34,6 +37,7 @@ type Event = {
   popularity?: number;
   lowest_price?: number;
   average_price?: number;
+  url?: string;
   provider_links?: ProviderLink[];
 };
 
@@ -110,6 +114,76 @@ function formatAnalysis(text: string) {
       <span key={i}>{part}</span>
     ),
   );
+}
+
+type Insight = {
+  number: string;
+  title: string;
+  body: string;
+};
+
+function parseAnalysis(text: string): Insight[] | null {
+  const pattern =
+    /^\s*(\d+)\.\s+\*\*([^*]+)\*\*\s*[—:\-–]?\s*([\s\S]*?)(?=\n\s*\d+\.\s+\*\*|\s*$)/gm;
+  const insights: Insight[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    insights.push({
+      number: match[1],
+      title: match[2].trim(),
+      body: match[3].trim(),
+    });
+  }
+  return insights.length >= 3 ? insights : null;
+}
+
+type InsightTone = "verdict" | "positive" | "warning" | "info";
+
+const insightTone: Record<number, InsightTone> = {
+  0: "verdict",
+  1: "positive",
+  2: "warning",
+  3: "info",
+};
+
+const insightStyles: Record<
+  InsightTone,
+  { bg: string; border: string; title: string; body: string; iconColor: string }
+> = {
+  verdict: {
+    bg: "bg-emerald-500/10",
+    border: "border-emerald-500/20",
+    title: "text-emerald-300",
+    body: "text-emerald-100/90",
+    iconColor: "text-emerald-400",
+  },
+  positive: {
+    bg: "bg-emerald-500/5",
+    border: "border-emerald-500/20",
+    title: "text-emerald-300",
+    body: "text-emerald-100/80",
+    iconColor: "text-emerald-400",
+  },
+  warning: {
+    bg: "bg-amber-500/5",
+    border: "border-amber-500/20",
+    title: "text-amber-300",
+    body: "text-amber-100/80",
+    iconColor: "text-amber-400",
+  },
+  info: {
+    bg: "bg-blue-500/5",
+    border: "border-blue-500/20",
+    title: "text-blue-300",
+    body: "text-blue-100/80",
+    iconColor: "text-blue-400",
+  },
+};
+
+function InsightIcon({ tone, className }: { tone: InsightTone; className?: string }) {
+  if (tone === "warning") return <AlertTriangle className={className} />;
+  if (tone === "info") return <Info className={className} />;
+  return <CheckCircle2 className={className} />;
 }
 
 export default function SeatGenius() {
@@ -398,60 +472,83 @@ function EventCard({
       : "Prices TBD";
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(event)}
-      className="group block w-full text-left"
-    >
-      <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors group-hover:border-slate-700 group-hover:bg-slate-900/70">
-        <CardContent className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="min-w-0 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="truncate text-lg text-white">
+    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700">
+      <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="min-w-0 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-xl text-white">
                 {event.short_title || event.title}
               </h3>
-              {demand && (
-                <Badge variant="outline" className={cn("shrink-0", demandClasses[demand])}>
-                  {demand}
-                </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" />
-                {formatDate(event.datetime_local)}
-                {formatTime(event.datetime_local) && ` · ${formatTime(event.datetime_local)}`}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" />
-                {event.venue} · {event.city}, {event.state}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-end justify-between gap-6 md:flex-col md:items-end md:justify-center">
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                {event.lowest_price ? "Starting at" : "Average"}
-              </div>
-              <div className="text-xl font-semibold text-white">
-                {priceLabel}
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <Calendar className="h-4 w-4" />
+                  {formatDate(event.datetime_local)}
+                  {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <MapPin className="h-4 w-4" />
+                  {event.venue}, {event.city}
+                </span>
               </div>
             </div>
-            {score != null && (
-              <div className="text-right">
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                  Deal Score
-                </div>
-                <div className={cn("text-xl font-semibold", scoreClass(score))}>
-                  {score}
-                  <span className="text-xs text-slate-500">/100</span>
-                </div>
-              </div>
+            {demand && (
+              <Badge variant="outline" className={cn("shrink-0", demandClasses[demand])}>
+                {demand} Demand
+              </Badge>
             )}
           </div>
-        </CardContent>
-      </Card>
-    </button>
+
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-xs text-slate-400">
+                {event.lowest_price ? "Starting at" : "Average Price"}
+              </div>
+              <div className="text-2xl text-white">{priceLabel}</div>
+            </div>
+            {score != null && (
+              <>
+                <div className="h-10 w-px bg-slate-700" />
+                <div>
+                  <div className="text-xs text-slate-400">Deal Score</div>
+                  <div className={cn("text-2xl", scoreClass(score))}>
+                    {score}
+                    <span className="text-sm text-slate-500">/100</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 md:flex-col md:justify-center">
+          <Button
+            onClick={() => onSelect(event)}
+            className="flex-1 bg-blue-600 text-white hover:bg-blue-700 md:flex-initial"
+          >
+            <Sparkles className="h-4 w-4" />
+            Analyze Deal
+          </Button>
+          {event.url && (
+            <Button
+              variant="outline"
+              asChild
+              className="flex-1 border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 md:flex-initial"
+            >
+              <a
+                href={event.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-4 w-4" />
+                View Tickets
+              </a>
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -499,38 +596,41 @@ function EventDetail({
       </Button>
 
       <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
-        <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="space-y-3">
+        <CardContent className="grid gap-6 p-8 md:grid-cols-[1fr_auto] md:items-center">
+          <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="text-2xl text-white">
+              <h2 className="text-3xl text-white">
                 {event.short_title || event.title}
               </h2>
               {demand && (
-                <Badge variant="outline" className={cn(demandClasses[demand])}>
+                <Badge
+                  variant="outline"
+                  className={cn("px-3 py-1 text-sm", demandClasses[demand])}
+                >
                   {demand} Demand
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" />
+            <div className="flex flex-wrap gap-4 text-slate-300">
+              <span className="inline-flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-slate-500" />
                 {formatDate(event.datetime_local)}
-                {formatTime(event.datetime_local) && ` · ${formatTime(event.datetime_local)}`}
+                {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" />
+              <span className="inline-flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-slate-500" />
                 {event.venue}, {event.city}
               </span>
             </div>
           </div>
           {score != null && (
             <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">
+              <div className="text-xs uppercase tracking-wider text-slate-500">
                 Deal Score
               </div>
-              <div className={cn("text-3xl font-semibold", scoreClass(score))}>
+              <div className={cn("text-4xl font-semibold", scoreClass(score))}>
                 {score}
-                <span className="text-sm text-slate-500">/100</span>
+                <span className="text-base text-slate-500">/100</span>
               </div>
             </div>
           )}
@@ -581,7 +681,12 @@ function EventDetail({
         <LoadingRow label="AI is analyzing ticket prices and finding the best deal…" />
       )}
 
-      {result && <AnalysisCard text={result} />}
+      {result && (
+        <AnalysisCard
+          text={result}
+          eventTitle={event.short_title || event.title}
+        />
+      )}
     </div>
   );
 }
@@ -678,24 +783,31 @@ function PriceComparisonCard({
 }) {
   return (
     <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
-      <CardContent className="p-6">
-        <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-          <TrendingUp className="h-3.5 w-3.5" />
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-white">
+          <TrendingUp className="h-5 w-5 text-blue-400" />
           Price Comparison Across Platforms
-        </div>
-        <div className="divide-y divide-slate-800">
-          {platforms.map((p, i) => {
-            const muted = p.status === "pending_affiliate";
-            return (
-              <div
-                key={i}
-                className={cn(
-                  "flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0",
-                  muted && "opacity-50",
-                )}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="text-sm text-slate-200">{p.platform}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {platforms.map((p, i) => {
+          const muted = p.status === "pending_affiliate";
+          const priceText = p.lowest_price
+            ? `$${p.lowest_price}${p.highest_price ? ` – $${p.highest_price}` : ""}`
+            : p.status === "pending_affiliate"
+              ? "Coming soon"
+              : "Price on site";
+          return (
+            <div
+              key={i}
+              className={cn(
+                "flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-950/50 p-4 transition-colors hover:border-slate-700",
+                muted && "opacity-60",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-white">{p.platform}</p>
                   {p.platform === bestPlatform && (
                     <Badge
                       variant="outline"
@@ -704,71 +816,92 @@ function PriceComparisonCard({
                       Best
                     </Badge>
                   )}
-                  {p.status === "pending_affiliate" && (
-                    <span className="text-[10px] italic text-slate-500">coming soon</span>
-                  )}
-                  {p.status === "no_data" && p.buy_url && (
-                    <span className="text-[10px] italic text-slate-500">price on site</span>
-                  )}
                 </div>
-                <div className="text-right">
-                  {p.lowest_price ? (
-                    <>
-                      <div className="text-sm font-semibold text-white">
-                        ${p.lowest_price}
-                        {p.highest_price ? ` – $${p.highest_price}` : ""}
-                      </div>
-                      {p.buy_url && (
-                        <a
-                          href={p.buy_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-blue-400 hover:text-blue-300"
-                        >
-                          Buy →
-                        </a>
-                      )}
-                    </>
-                  ) : p.buy_url ? (
-                    <a
-                      href={p.buy_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-400 hover:text-blue-300"
-                    >
-                      View →
-                    </a>
-                  ) : (
-                    <span className="text-sm text-slate-600">—</span>
-                  )}
-                </div>
+                <p className="mt-1 text-sm text-slate-400">{priceText}</p>
               </div>
-            );
-          })}
-        </div>
+              {p.buy_url ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  className="border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800"
+                >
+                  <a href={p.buy_url} target="_blank" rel="noopener noreferrer">
+                    View
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+              ) : (
+                <span className="text-sm text-slate-600">—</span>
+              )}
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );
 }
 
-function AnalysisCard({ text }: { text: string }) {
+function AnalysisCard({ text, eventTitle }: { text: string; eventTitle: string }) {
+  const insights = parseAnalysis(text);
+
   return (
     <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
-      <CardContent className="p-6">
-        <div className="mb-3 flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-          >
-            <Sparkles className="h-3 w-3" />
-            AI Verdict
-          </Badge>
-        </div>
-        <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
-          {formatAnalysis(text)}
-        </div>
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-white">
+          <Sparkles className="h-5 w-5 text-blue-400" />
+          AI Ticket Analysis: {eventTitle}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {insights ? (
+          insights.slice(0, 4).map((insight, idx) => (
+            <InsightBlock key={idx} insight={insight} index={idx} />
+          ))
+        ) : (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+            {formatAnalysis(text)}
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function InsightBlock({ insight, index }: { insight: Insight; index: number }) {
+  const tone = insightTone[index] ?? "info";
+  const styles = insightStyles[tone];
+  const isVerdict = tone === "verdict";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-5",
+        styles.bg,
+        styles.border,
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <InsightIcon
+          tone={tone}
+          className={cn("mt-0.5 h-5 w-5 shrink-0", styles.iconColor)}
+        />
+        <div className="min-w-0 flex-1">
+          <h3
+            className={cn(
+              isVerdict ? "text-xl" : "text-base",
+              "mb-2 font-medium",
+              styles.title,
+            )}
+          >
+            {insight.number}. {insight.title}
+          </h3>
+          <p className={cn("text-sm leading-relaxed", styles.body)}>
+            {formatAnalysis(insight.body)}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 

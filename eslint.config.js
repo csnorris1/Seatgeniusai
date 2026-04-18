@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'figma-export']),
+  globalIgnores(['dist', 'figma-export', 'figma-export-v2']),
   {
     files: ['api/**/*.js'],
     languageOptions: {
