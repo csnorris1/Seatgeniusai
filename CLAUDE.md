@@ -21,7 +21,9 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - `action=compare&event_id=<id>` — multi-platform price comparison (SeatGeek + Ticketmaster live; StubHub/Vivid Seats pending)
 - `action=monitor` — hot deals across MLB, ranked by discount vs average price
 
-**AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude.
+**AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude. The prompt asks for 4 numbered sections — **Demand verdict**, **Best value pick**, **Price check suggestion**, **Final verdict** — and `parseAnalysis()` in `App.tsx` splits the response into color-coded `InsightBlock` cards (emerald/emerald/amber/blue). If parsing fails, it falls back to flat pre-wrapped text. **If you change the prompt's section structure, update `parseAnalysis` too** — it tolerates `**N. Title**`, `N. **Title**`, and `N. Title` header formats but assumes 4 numbered sections.
+
+**Deal Score** (shown on event cards and detail header) is derived in `dealScore()` as `50 + (1 - lowest_price / average_price) * 100`, clamped to 0–99. Returns `null` when either price is missing — card simply omits the score in that case.
 
 ## API Keys & URLs
 
@@ -57,8 +59,14 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 - Styling: Tailwind v4 utilities + shadcn components (`src/components/ui/*`). Prefer adding more shadcn pieces (`npx shadcn add <name>`) over hand-rolling styled components.
 - Backend: `api/search.js` stays CommonJS (AWS Lambda)
 - ESLint rule: unused vars are errors, except those starting with uppercase or underscore (`varsIgnorePattern: '^[A-Z_]'`). In `src/components/ui/`, `react-refresh/only-export-components` is disabled (shadcn re-exports `*Variants` alongside components).
+- Dynamic lucide icons: don't do `const Icon = getIcon(); <Icon/>` — `react-hooks/static-components` will fail. Use an inline switch component (see `InsightIcon` in `App.tsx`).
 - The Lambda uses `fetch` (Node 18+ built-in), not `https` or axios
 - SeatGeek event IDs are used as-is (no prefixing)
+- Event cards' "View Tickets" button depends on `event.url` (passed through from SeatGeek API in `api/search.js`). Don't strip that field.
+
+## Figma Workflow
+
+Figma "code export" snapshots whatever's currently in the design file — it is **not a diff of changes since last export**. If you haven't moved anything in Figma, the export will be a mockup of what's already deployed and applying it is a regression. Before integrating a new export, diff it against `figma-export/` (the previous export kept for reference) or the live `src/App.tsx` and bail out if nothing meaningful changed. Hardcoded mock data in exports always gets skipped in favor of the real API wiring.
 
 ## Git Workflow
 
