@@ -123,17 +123,33 @@ type Insight = {
 };
 
 function parseAnalysis(text: string): Insight[] | null {
-  const pattern =
-    /^\s*(\d+)\.\s+\*\*([^*]+)\*\*\s*[—:\-–]?\s*([\s\S]*?)(?=\n\s*\d+\.\s+\*\*|\s*$)/gm;
+  // Strip leading markdown headers ("## Title")
+  const cleaned = text.replace(/^##+\s+.*(\n|$)/gm, "").trim();
+
+  // Split on numbered section headers: a line starting with optional **,
+  // then digits, period, space. Handles "**1. Title**", "1. **Title**",
+  // "1. Title", "**1. Title** — body", etc.
+  const parts = cleaned.split(/\n(?=\s*(?:\*\*)?\d+\.\s+)/);
+
   const insights: Insight[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    insights.push({
-      number: match[1],
-      title: match[2].trim(),
-      body: match[3].trim(),
-    });
+  for (const part of parts) {
+    const firstNewline = part.indexOf("\n");
+    const firstLine = firstNewline === -1 ? part : part.slice(0, firstNewline);
+    const rest = firstNewline === -1 ? "" : part.slice(firstNewline + 1);
+
+    // Match: optional **, number, period, space, title, optional trailing **,
+    // then either end of line OR " — body" on same line
+    const header = firstLine.match(
+      /^\s*(?:\*\*)?(\d+)\.\s+(.+?)(?:\*\*)?(?:\s*[—:\-–]\s*(.+))?\s*$/,
+    );
+    if (!header) continue;
+
+    const title = header[2].replace(/\*\*/g, "").trim();
+    const inlineBody = header[3] ? header[3].trim() : "";
+    const body = [inlineBody, rest.trim()].filter(Boolean).join("\n\n").trim();
+    insights.push({ number: header[1], title, body });
   }
+
   return insights.length >= 3 ? insights : null;
 }
 
@@ -896,9 +912,9 @@ function InsightBlock({ insight, index }: { insight: Insight; index: number }) {
           >
             {insight.number}. {insight.title}
           </h3>
-          <p className={cn("text-sm leading-relaxed", styles.body)}>
+          <div className={cn("whitespace-pre-wrap text-sm leading-relaxed", styles.body)}>
             {formatAnalysis(insight.body)}
-          </p>
+          </div>
         </div>
       </div>
     </div>
