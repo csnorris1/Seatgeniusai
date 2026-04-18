@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+figma-export/node_modules
+figma-export/dist
+figma-export/.next
+figma-export/.vite
