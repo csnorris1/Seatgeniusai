@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
+import { calculateValueScore, type ValueScoreBreakdown } from "@/lib/valueScore";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -481,6 +482,7 @@ function EventCard({
 }) {
   const demand = demandFromPopularity(event.popularity);
   const score = dealScore(event);
+  const value = useMemo(() => calculateValueScore(event), [event]);
   const priceLabel = event.lowest_price
     ? `from $${event.lowest_price}`
     : event.average_price
@@ -535,6 +537,8 @@ function EventCard({
               </>
             )}
           </div>
+
+          <ValueMeter score={value.score} breakdown={value.breakdown} />
         </div>
 
         <div className="flex gap-2 md:flex-col md:justify-center">
@@ -565,6 +569,57 @@ function EventCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ValueMeter({
+  score,
+  breakdown,
+}: {
+  score: number;
+  breakdown: ValueScoreBreakdown;
+}) {
+  const labelColor =
+    score >= 67
+      ? "text-emerald-300"
+      : score >= 34
+        ? "text-yellow-300"
+        : "text-red-300";
+
+  const tooltip = [
+    `Value Score: ${score}/100`,
+    "",
+    "How this is calculated:",
+    `• Demand: ${breakdown.demand}/100 (50% weight)`,
+    `• Day of week: ${breakdown.dayOfWeek}/100 (20% weight)`,
+    `• Time of day: ${breakdown.timeOfDay}/100 (10% weight)`,
+    `• Opponent: ${breakdown.opponent}/100 (20% weight)`,
+    "",
+    "Higher = better deal opportunity. Lower = high-demand game.",
+  ].join("\n");
+
+  return (
+    <div className="space-y-1.5" title={tooltip}>
+      <div className="flex items-center gap-3">
+        <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500"
+            style={{
+              width: `${score}%`,
+              backgroundSize: `${10000 / Math.max(score, 1)}% 100%`,
+            }}
+          />
+        </div>
+        <span
+          className={cn(
+            "whitespace-nowrap text-xs font-medium tabular-nums",
+            labelColor,
+          )}
+        >
+          Value Score: {score}
+        </span>
+      </div>
+    </div>
   );
 }
 
