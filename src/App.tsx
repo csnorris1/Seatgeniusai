@@ -572,6 +572,32 @@ function EventCard({
   );
 }
 
+type FactorLabel = { text: string; color: string };
+
+function demandFactor(s: number): FactorLabel {
+  if (s >= 75) return { text: "Low demand", color: "text-emerald-400" };
+  if (s >= 50) return { text: "Moderate demand", color: "text-slate-400" };
+  if (s >= 25) return { text: "High demand", color: "text-orange-400" };
+  return { text: "Very high demand", color: "text-red-400" };
+}
+
+function dayFactor(s: number): FactorLabel {
+  if (s >= 80) return { text: "Weekday", color: "text-emerald-400" };
+  if (s >= 40) return { text: "Friday", color: "text-slate-400" };
+  return { text: "Weekend", color: "text-red-400" };
+}
+
+function timeFactor(s: number): FactorLabel {
+  if (s >= 80) return { text: "Day game", color: "text-emerald-400" };
+  return { text: "Night game", color: "text-orange-400" };
+}
+
+function opponentFactor(s: number): FactorLabel {
+  if (s >= 60) return { text: "Standard opponent", color: "text-emerald-400" };
+  if (s >= 30) return { text: "Strong draw", color: "text-orange-400" };
+  return { text: "Rival matchup", color: "text-red-400" };
+}
+
 function ValueMeter({
   score,
   breakdown,
@@ -586,20 +612,15 @@ function ValueMeter({
         ? "text-yellow-300"
         : "text-red-300";
 
-  const tooltip = [
-    `Value Score: ${score}/100`,
-    "",
-    "How this is calculated:",
-    `• Demand: ${breakdown.demand}/100 (50% weight)`,
-    `• Day of week: ${breakdown.dayOfWeek}/100 (20% weight)`,
-    `• Time of day: ${breakdown.timeOfDay}/100 (10% weight)`,
-    `• Opponent: ${breakdown.opponent}/100 (20% weight)`,
-    "",
-    "Higher = better deal opportunity. Lower = high-demand game.",
-  ].join("\n");
+  const factors: FactorLabel[] = [
+    demandFactor(breakdown.demand),
+    dayFactor(breakdown.dayOfWeek),
+    timeFactor(breakdown.timeOfDay),
+    opponentFactor(breakdown.opponent),
+  ];
 
   return (
-    <div className="space-y-1.5" title={tooltip}>
+    <div className="space-y-2">
       <div className="flex items-center gap-3">
         <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
           <div
@@ -618,6 +639,14 @@ function ValueMeter({
         >
           Value Score: {score}
         </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+        {factors.map((f, i) => (
+          <span key={i} className="inline-flex items-center gap-2">
+            {i > 0 && <span className="text-slate-600">·</span>}
+            <span className={f.color}>{f.text}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
