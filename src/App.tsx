@@ -543,7 +543,7 @@ function EventCard({
           <ValueMeter score={value.score} breakdown={value.breakdown} />
         </div>
 
-        <div className="flex gap-2 md:flex-col md:justify-center">
+        <div className="flex md:flex-col md:justify-center">
           <Button
             onClick={() => onSelect(event)}
             className="flex-1 bg-blue-600 text-white hover:bg-blue-700 md:flex-initial"
@@ -551,23 +551,6 @@ function EventCard({
             <Sparkles className="h-4 w-4" />
             Analyze Deal
           </Button>
-          {event.url && (
-            <Button
-              variant="outline"
-              asChild
-              className="flex-1 border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 md:flex-initial"
-            >
-              <a
-                href={event.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink className="h-4 w-4" />
-                View Tickets
-              </a>
-            </Button>
-          )}
         </div>
       </CardContent>
     </Card>
