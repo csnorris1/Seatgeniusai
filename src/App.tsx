@@ -487,7 +487,7 @@ function EventCard({
     ? `from $${event.lowest_price}`
     : event.average_price
       ? `~$${event.average_price}`
-      : "Prices TBD";
+      : null;
 
   return (
     <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700">
@@ -517,26 +517,28 @@ function EventCard({
             )}
           </div>
 
-          <div className="flex items-center gap-6">
-            <div>
-              <div className="text-xs text-slate-400">
-                {event.lowest_price ? "Starting at" : "Average Price"}
-              </div>
-              <div className="text-2xl text-white">{priceLabel}</div>
-            </div>
-            {score != null && (
-              <>
-                <div className="h-10 w-px bg-slate-700" />
-                <div>
-                  <div className="text-xs text-slate-400">Deal Score</div>
-                  <div className={cn("text-2xl", scoreClass(score))}>
-                    {score}
-                    <span className="text-sm text-slate-500">/100</span>
-                  </div>
+          {priceLabel && (
+            <div className="flex items-center gap-6">
+              <div>
+                <div className="text-xs text-slate-400">
+                  {event.lowest_price ? "Starting at" : "Average Price"}
                 </div>
-              </>
-            )}
-          </div>
+                <div className="text-2xl text-white">{priceLabel}</div>
+              </div>
+              {score != null && (
+                <>
+                  <div className="h-10 w-px bg-slate-700" />
+                  <div>
+                    <div className="text-xs text-slate-400">Deal Score</div>
+                    <div className={cn("text-2xl", scoreClass(score))}>
+                      {score}
+                      <span className="text-sm text-slate-500">/100</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <ValueMeter score={value.score} breakdown={value.breakdown} />
         </div>
