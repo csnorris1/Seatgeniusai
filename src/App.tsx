@@ -305,7 +305,14 @@ export default function SeatGenius() {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 1500,
+          tools: [
+            {
+              type: "web_search_20250305",
+              name: "web_search",
+              max_uses: 3,
+            },
+          ],
           messages: [
             {
               role: "user",
@@ -322,9 +329,11 @@ ${listingText || "No price data available yet."}
 
 **Also listed on:** ${altSitesText}
 
-Based on ALL of this context, provide:
+Before answering, use the web_search tool (max 2-3 searches) to gather live context that affects ticket demand: notable player injuries or returns, recent team form/streaks, weather forecast for game day, rivalry or storyline context, and starting-pitcher news. Search for the most current information available. If a fact isn't available, skip it — do not speculate.
 
-1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, and venue size.
+Then provide:
+
+1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, venue size, and the live context you found. Weave one specific fact from your web search into this verdict (e.g. "Judge on a 5-game HR streak", "rain forecast Saturday", "Skenes starting").
 
 2. **Best value pick** — which tier and why, considering the demand level.
 
@@ -338,7 +347,14 @@ Keep it concise and conversational. Bold the key insights.`,
         }),
       });
       const data = await res.json();
-      if (data.content?.[0]?.text) setResult(data.content[0].text);
+      const textBlocks = Array.isArray(data.content)
+        ? data.content
+            .filter((b: { type: string }) => b.type === "text")
+            .map((b: { text: string }) => b.text)
+            .filter(Boolean)
+        : [];
+      const finalText = textBlocks.join("\n\n").trim();
+      if (finalText) setResult(finalText);
       else
         setError(
           `Couldn't get analysis: ${data.error?.message || JSON.stringify(data.error) || "Unknown error"}`,
