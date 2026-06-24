@@ -311,15 +311,10 @@ const MARKET={
 // ── Get-in price tracking ───────────────────────────────────────────
 // "Get-in" = the cheapest listed ticket for a match (the price to get in the
 // door), per-match not per-seat. We keep a short dated history per match id so
-// the card can show week-over-week movement. Refresh (inside Claude.ai) appends
-// a fresh reading; the WoW % is computed against the reading ~7 days earlier.
-// Seed below is illustrative on a few favorites so the badge renders right away
-// — real readings overwrite it on the first price refresh.
-const GETIN_SEED={
-  76:[{d:"2026-06-16",p:310},{d:"2026-06-23",p:282}],   // Brazil R32 · Houston   ▼9%
-  86:[{d:"2026-06-16",p:520},{d:"2026-06-23",p:545}],   // Argentina R32 · Miami  ▲5%
-  104:[{d:"2026-06-16",p:2200},{d:"2026-06-23",p:2030}] // Final · MetLife        ▼8%
-};
+// the card can show week-over-week movement. Refresh (inside Claude.ai) provides
+// each match's current get-in price and its ~7-day change, so the trend is real
+// on the first pull. No placeholder/seed prices — empty until a real Refresh.
+const GETIN_SEED={};
 
 // Per-card seating / buying notes.
 const NOTES={
@@ -592,7 +587,8 @@ const CLINCHED=new Set(["MEX","USA","GER","FRA","NOR","ARG"]);
 
 // ── Get-in price + week-over-week % ─────────────────────────────────
 // Reads the dated history in getinHist[id], shows the latest get-in price and
-// how it has moved versus the reading closest to 7 days earlier. Down = good
+// how it has moved. Prefers a source-provided 7-day change (chg) from Refresh;
+// otherwise computes it against the stored reading ~7 days earlier. Down = good
 // for a buyer (green); up = heating up (coral).
 function getinWoW(id){
   const h=getinHist[id]; if(!h||!h.length)return null;
@@ -606,6 +602,9 @@ function getinWoW(id){
   }
   let pct=null,dir="flat";
   if(prev&&prev.p>0){pct=Math.round((latest.p-prev.p)/prev.p*100);dir=pct<0?"down":pct>0?"up":"flat";}
+  // Prefer the source's own 7-day change when Refresh provides one (real trend on the
+  // first pull, before we've accumulated our own history).
+  if(typeof latest.chg==="number"){pct=Math.round(latest.chg);dir=pct<0?"down":pct>0?"up":"flat";}
   return {cur:latest.p,pct,dir,asof:latest.d};
 }
 function getinLine(id){
@@ -887,12 +886,13 @@ async function refreshScores(){
   btn.disabled=true;btn.textContent="↻ Refreshing…";
   body.innerHTML='<span class="live-empty">Searching for the latest scores & prices…</span>';
   try{
-    // Build a small list of matches to price: those already tracked for get-in + any starred.
+    // Build a small list of matches to price: the featured matches (MARKET), anything
+    // already tracked for get-in, plus any starred game.
     const flat={};[REMAINING].concat(ROUNDS).forEach(r=>r.matches.forEach(m=>flat[m.id]=m));[FINAL.final,FINAL.bronze].forEach(m=>{if(m)flat[m.id]=m;});
-    const wantIds=[...new Set([...Object.keys(getinHist),...Object.keys(stars)])].filter(id=>flat[id]);
+    const wantIds=[...new Set([...Object.keys(MARKET),...Object.keys(getinHist),...Object.keys(stars)])].filter(id=>flat[id]);
     const wantList=wantIds.map(id=>{const m=flat[id];const t=m.t.map(x=>N[x[0]]||x[0]).join(" vs ");const city=(m.v||"").split(" · ")[0];return `id ${id}: ${t} (${city})`;}).join("; ")||"none";
     const today=new Date().toISOString().slice(0,10);
-    const prompt=`Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"groupC":[{"t":"team","p":4,"gd":"+3"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":282}],"note":"one sentence on whether Brazil is on track to win Group C and reach the Houston R32 game"}. In "results", list every COMPLETED group-stage match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm — this drives the clinched/alive/dead-rubber stakes signal. In "getin", give the current cheapest all-in resale price (get-in, a whole-dollar number) for ONLY these matches by id: ${wantList}. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+    const prompt=`Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"groupC":[{"t":"team","p":4,"gd":"+3"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one sentence on whether Brazil is on track to win Group C and reach the Houston R32 game"}. In "results", list every COMPLETED group-stage match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm — this drives the clinched/alive/dead-rubber stakes signal. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars, and its approximate percent change over the last 7 days as "chg" (a number, negative if the price dropped), using resale price trackers — for knockout slots the teams may still be undecided, price the match-number slot anyway. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
     const res=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1800,messages:[{role:"user",content:prompt}],tools:[{type:"web_search_20250305",name:"web_search"}]})
@@ -917,7 +917,7 @@ async function refreshScores(){
         parsed.getin.forEach(g=>{
           if(!g||g.id==null||g.p==null)return;
           const id=String(g.id),h=(getinHist[id]||[]).filter(x=>x.d!==today);
-          h.push({d:today,p:Math.round(+g.p)});getinHist[id]=h;dirty=true;
+          h.push({d:today,p:Math.round(+g.p),chg:(g.chg!=null&&!isNaN(+g.chg))?+g.chg:undefined});getinHist[id]=h;dirty=true;
         });
       }
       if(dirty){save();render();}
@@ -933,7 +933,7 @@ document.getElementById("foot").innerHTML=
   "Face ranges are official FIFA Cat 4–Cat 1 figures; live marketplace prices are dynamic and often higher. "+
   "Tracked group games seeded from your FIFA prices: M43 Arg–Aut ($2,400/$2,300), M45 Eng–Gha ($1,600/$1,100), M49 Bra–Sco ($2,500/$2,300). Plus knockout M76 Houston ($2,000/$1,800), M89 R16 Philadelphia ($2,700/$2,200), M95 R16 Atlanta ($2,800/$2,200), M99 QF Miami ($3,700/$3,300), M97 QF Boston ($2,700/$1,300), M100 QF Kansas City ($3,600/$2,900), M102 SF Atlanta ($3,400/$2,900). Cat 2 pre-selected on each — tap to change. "+
   "The +15% is FIFA's resale buyer fee. Add more games by extending the CATS and REMAINING objects up top. "+
-  "NEW · get-in line shows the cheapest listed ticket per match plus its week-over-week move (▼ green = softening, ▲ coral = heating up) — seeded on a few favorites; hit Refresh inside Claude.ai to pull live numbers. "+
+  "NEW · get-in line shows the cheapest listed ticket per match plus its 7-day move (▼ green = softening, ▲ coral = heating up). It's empty until you hit Refresh inside Claude.ai, which pulls live get-in prices and their recent change for the featured matches — no placeholder numbers. "+
   "NEW · the ⚑ stakes chip on group games is computed (clinched / alive / dead rubber) from the verified clinched set, and switches to live standings once Refresh populates them — it also drives the ⏱ buy-timing badge.";
 (async()=>{await load();render();renderFavBar();document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
 </script>
