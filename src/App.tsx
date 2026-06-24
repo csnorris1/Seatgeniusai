@@ -295,25 +295,29 @@ export default function SeatGenius() {
     const altSitesText = altSites.length ? altSites.join(", ") : "none available";
 
     try {
-      const res = await fetch(`${AWS_URL}/search?action=analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: selectedEvent.title,
-          date: formatDate(selectedEvent.datetime_local),
-          gameDay,
-          venue: selectedEvent.venue,
-          city: selectedEvent.city,
-          state: selectedEvent.state,
-          venueCapacity: selectedEvent.venue_capacity ?? null,
-          homeTeam: selectedEvent.home_team || "Unknown",
-          awayTeam: selectedEvent.away_team || "Unknown",
-          demandLevel,
-          popularity: selectedEvent.popularity ?? null,
-          listingText,
-          altSitesText,
-        }),
+      const qs = new URLSearchParams({
+        action: "analyze",
+        title: selectedEvent.title ?? "",
+        date: formatDate(selectedEvent.datetime_local),
+        gameDay,
+        venue: selectedEvent.venue ?? "",
+        city: selectedEvent.city ?? "",
+        state: selectedEvent.state ?? "",
+        venueCapacity:
+          selectedEvent.venue_capacity != null
+            ? String(selectedEvent.venue_capacity)
+            : "",
+        homeTeam: selectedEvent.home_team || "Unknown",
+        awayTeam: selectedEvent.away_team || "Unknown",
+        demandLevel,
+        popularity:
+          selectedEvent.popularity != null
+            ? String(selectedEvent.popularity)
+            : "",
+        listingText,
+        altSitesText,
       });
+      const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
       const data = await res.json();
       const finalText = (data.analysis || "").trim();
       if (finalText) setResult(finalText);

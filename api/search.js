@@ -346,21 +346,15 @@ exports.handler = async (event) => {
         return respond(500, { error: 'AI analysis is not configured.' });
       }
 
-      let raw = event.body || '';
-      if (event.isBase64Encoded && raw) {
-        raw = Buffer.from(raw, 'base64').toString('utf8');
-      }
-      let d;
-      try {
-        d = raw ? JSON.parse(raw) : {};
-      } catch {
-        return respond(400, { error: 'Invalid request body.' });
-      }
-
-      const cap = typeof d.venueCapacity === 'number'
-        ? ` (capacity: ${d.venueCapacity.toLocaleString('en-US')})`
+      // Game data arrives as query params (GET) — the API Gateway route only
+      // forwards GET to this Lambda.
+      const d = params;
+      const capNum = Number(d.venueCapacity);
+      const cap = Number.isFinite(capNum) && capNum > 0
+        ? ` (capacity: ${capNum.toLocaleString('en-US')})`
         : '';
-      const pop = typeof d.popularity === 'number' ? d.popularity.toFixed(2) : 'N/A';
+      const popNum = Number(d.popularity);
+      const pop = d.popularity && Number.isFinite(popNum) ? popNum.toFixed(2) : 'N/A';
       const altSitesText = d.altSitesText || 'none available';
 
       const prompt = `You are an expert MLB ticket deal analyst. Analyze this game and give a plain-English buying verdict.
