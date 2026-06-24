@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Road to MetLife — 2026 World Cup Projection + Ticket Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{--pitch-0:#04130f;--pitch-1:#082019;--pitch-2:#0c2a21;--card:#0f3127;--card-line:#1c5141;--chalk:#eef3ec;--chalk-dim:#9fb6ac;--gold:#f5c451;--gold-deep:#c8922b;--coral:#ff5d4d}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:radial-gradient(1200px 600px at 70% -10%,rgba(47,227,154,.10),transparent 60%),radial-gradient(900px 500px at 10% 110%,rgba(245,196,81,.08),transparent 55%),linear-gradient(180deg,var(--pitch-1),var(--pitch-0));color:var(--chalk);font-family:'Archivo',system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;padding:clamp(16px,4vw,48px) clamp(12px,4vw,40px) 80px}
+  header{max-width:1240px;margin:0 auto 8px}
+  .eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold)}
+  h1{font-family:'Anton',sans-serif;font-weight:400;line-height:.92;letter-spacing:.01em;font-size:clamp(40px,9vw,104px);text-transform:uppercase;margin:.12em 0 .18em;background:linear-gradient(180deg,#fff,#cfe6db);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{max-width:64ch;color:var(--chalk-dim);font-size:clamp(14px,1.6vw,16px);line-height:1.5}
+  .sub b{color:var(--chalk);font-weight:600}
+  .champ{max-width:1240px;margin:28px auto 8px;display:flex;align-items:center;gap:clamp(14px,3vw,28px);padding:clamp(16px,3vw,26px) clamp(18px,4vw,34px);border-radius:18px;background:linear-gradient(110deg,rgba(245,196,81,.16),rgba(245,196,81,.03));border:1px solid var(--gold-deep);position:relative;overflow:hidden}
+  .champ::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,transparent 0 22px,rgba(245,196,81,.05) 22px 23px);pointer-events:none}
+  .champ .trophy{font-size:clamp(40px,9vw,68px);line-height:1;filter:drop-shadow(0 6px 14px rgba(0,0,0,.5))}
+  .champ .label{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
+  .champ .name{font-family:'Anton',sans-serif;font-size:clamp(30px,6.5vw,56px);text-transform:uppercase;line-height:1;margin-top:4px;color:#fff}
+  .champ .name .flag{font-family:'Archivo';margin-right:.18em}
+  .champ .note{color:var(--chalk-dim);font-size:13px;margin-top:7px}
+  .budget{position:sticky;top:0;z-index:20;max-width:1240px;margin:20px auto 0;display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:13px 18px;border-radius:14px;background:rgba(8,32,25,.88);backdrop-filter:blur(10px);border:1px solid var(--card-line)}
+  .budget .stat{display:flex;flex-direction:column;line-height:1.15}
+  .budget .stat b{font-family:'Anton',sans-serif;font-weight:400;font-size:clamp(20px,3vw,28px);color:#fff}
+  .budget .stat span{font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--chalk-dim)}
+  .budget .stat.gold b{color:var(--gold)}
+  .budget .hint{font-family:'Space Mono',monospace;font-size:11px;color:var(--chalk-dim);margin-left:auto;max-width:34ch;line-height:1.4}
+  .budget button{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;color:var(--chalk-dim);background:transparent;border:1px solid var(--card-line);border-radius:7px;padding:6px 10px;cursor:pointer}
+  .budget button:hover{color:var(--coral);border-color:var(--coral)}
+  .legend{max-width:1240px;margin:16px auto 6px;display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;font-size:12.5px;color:var(--chalk-dim);font-family:'Space Mono',monospace;letter-spacing:.04em}
+  .legend .key{display:inline-flex;align-items:center;gap:8px}
+  .swatch{width:26px;height:10px;border-radius:3px;display:inline-block}
+  .swatch.win{background:var(--gold)}.swatch.out{background:var(--card-line)}
+  .srcbanner{max-width:1240px;margin:12px auto 0;display:flex;align-items:center;gap:12px;padding:11px 16px;border-radius:11px;background:rgba(245,196,81,.07);border:1px solid var(--gold-deep);font-size:12.5px;color:var(--chalk-dim);line-height:1.45}
+  .srcbanner b{color:var(--chalk);font-weight:600}
+  .srcbanner .tag{font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.18em;color:#1a1205;background:var(--gold);padding:3px 8px;border-radius:5px;flex:none}
+  .srcbanner.rotabanner{background:rgba(255,93,77,.07);border-color:var(--coral)}
+  .srcbanner.rotabanner .tag{background:var(--coral);color:#2a0a0a}
+  .livepanel{max-width:1240px;margin:12px auto 0;border:1px solid var(--card-line);border-radius:14px;background:linear-gradient(180deg,var(--card),var(--pitch-2));padding:14px 18px}
+  .live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .live-title{font-family:'Anton',sans-serif;text-transform:uppercase;font-size:19px;letter-spacing:.02em;display:flex;align-items:center;gap:9px}
+  .live-title .dot{width:9px;height:9px;border-radius:50%;background:#2fe39a;box-shadow:0 0 8px #2fe39a;animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  #refreshBtn{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.06em;color:#06231c;background:var(--gold);border:none;border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  #refreshBtn:hover{filter:brightness(1.08)}
+  #refreshBtn:disabled{opacity:.6;cursor:wait}
+  .live-body{margin-top:12px}
+  .live-empty{color:var(--chalk-dim);font-family:'Space Mono',monospace;font-size:11.5px;line-height:1.5}
+  .live-snap{display:flex;flex-direction:column;gap:7px;font-size:13px;line-height:1.5}
+  .snap-lbl{font-family:'Space Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:var(--gold);background:rgba(245,196,81,.1);padding:2px 7px;border-radius:5px}
+  .snap-g{color:var(--chalk-dim)}
+  .snap-g b{color:var(--chalk)}
+  .snap-note{margin-top:4px;font-family:'Space Mono',monospace;font-size:10.5px;color:var(--chalk-dim);opacity:.78}
+  .live-asof{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--chalk-dim);margin-bottom:9px}
+  .live-scores{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+  .live-score{font-family:'Space Mono',monospace;font-size:12px;background:rgba(0,0,0,.25);border:1px solid var(--card-line);border-radius:7px;padding:5px 9px;color:var(--chalk)}
+  .live-score .st{color:var(--gold);font-size:9px;margin-left:6px;letter-spacing:.08em}
+  .live-gc{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+  .live-gc td,.live-gc th{text-align:left;padding:4px 8px;border-bottom:1px solid var(--card-line)}
+  .live-gc th{font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--chalk-dim)}
+  .live-gc td:first-child{color:#fff;font-weight:600}
+  .live-note{margin-top:10px;padding:9px 12px;border-left:3px solid var(--gold);background:rgba(245,196,81,.06);font-size:12.5px;color:var(--chalk);line-height:1.5}
+  .live-err{color:var(--coral);font-family:'Space Mono',monospace;font-size:12px}
+  .tabs{max-width:1240px;margin:24px auto 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .tab{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--chalk-dim);background:rgba(255,255,255,.03);border:1px solid var(--card-line);border-radius:999px;padding:8px 16px;cursor:pointer;transition:.12s}
+  .tab:hover{color:var(--chalk);border-color:var(--gold-deep)}
+  .tab.active{color:#06231c;background:var(--gold);border-color:var(--gold)}
+  .favbar{max-width:1240px;margin:20px auto 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:'Space Mono',monospace}
+  .favbar-label{color:var(--chalk-dim);text-transform:uppercase;font-size:10px;letter-spacing:.12em}
+  .fav-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(245,107,107,.12);border:1px solid rgba(245,107,107,.45);color:var(--chalk);border-radius:999px;padding:4px 6px 4px 11px;font-size:12px}
+  .fav-x{background:none;border:none;color:var(--coral);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+  .fav-go{background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;letter-spacing:.02em}
+  .fav-pill.filtering{background:rgba(245,107,107,.3);border-color:var(--coral)}
+  #teamSel,#citySel{background:rgba(255,255,255,.04);border:1px solid var(--card-line);color:var(--chalk);border-radius:999px;padding:5px 12px;font-family:'Space Mono',monospace;font-size:12px;cursor:pointer}
+  .fav-empty{color:var(--chalk-dim);font-size:11px}
+  #favAdd{background:rgba(255,255,255,.04);border:1px solid var(--card-line);color:var(--chalk);border-radius:999px;padding:5px 12px;font-family:'Space Mono',monospace;font-size:12px;cursor:pointer}
+  .fav-sec .round-head .n{background:var(--coral);color:#2a0a0a;border-color:var(--coral)}
+  .fav-sec h2{color:var(--coral)}
+  .fav-team{padding:9px 0;border-bottom:1px solid var(--card-line)}
+  .fav-team:last-child{border-bottom:none}
+  .fav-name{font-family:'Anton',sans-serif;font-size:18px;letter-spacing:.02em;margin-bottom:8px}
+  .fav-track{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+  .fav-chip{display:inline-flex;align-items:center;gap:7px;background:rgba(0,0,0,.25);border:1px solid var(--card-line);border-radius:8px;padding:5px 9px;font-family:'Space Mono',monospace;font-size:11px}
+  .fc-rd{color:var(--gold);font-weight:700;font-size:9px;letter-spacing:.08em}
+  .fc-v{color:var(--chalk)}
+  .fc-p{color:#2fe39a;font-weight:700}
+  .fc-arrow{color:var(--chalk-dim);font-size:12px;margin:0 1px}
+  .match.fav{border-color:rgba(245,107,107,.55)}
+  .phead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:10px 0 2px;padding:9px 11px;background:rgba(47,227,154,.08);border:1px solid rgba(47,227,154,.28);border-radius:10px}
+  .phead .ph-lbl{font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.13em;color:var(--chalk-dim)}
+  .phead .ph-amt{font-family:'Anton',sans-serif;font-size:27px;color:#2fe39a;letter-spacing:.01em;line-height:1}
+  .phead .ph-src{font-family:'Space Mono',monospace;font-size:10px;color:var(--chalk-dim)}
+  .phead .ph-avg{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;color:#cdb3ff;background:rgba(180,150,255,.13);border:1px solid rgba(180,150,255,.32);border-radius:6px;padding:2px 7px}
+  .phead .ph-cmp{margin-left:auto;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;white-space:nowrap}
+  .phead .ph-cmp.under{color:#2fe39a}
+  .phead .ph-cmp.over{color:var(--coral)}
+  .phead.fifa{background:rgba(245,196,81,.07);border-color:rgba(245,196,81,.28)}
+  .phead.fifa .ph-amt{color:var(--gold)}
+  .phead.none{background:rgba(255,255,255,.02);border-color:var(--card-line)}
+  .phead.none .ph-amt{color:var(--chalk-dim);font-size:21px}
+  .timing{display:flex;flex-wrap:wrap;gap:5px 9px;align-items:baseline;margin:6px 0 2px;padding:7px 10px;border-radius:9px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.42}
+  .timing .t-lab{font-weight:700;font-size:10px;letter-spacing:.05em;white-space:nowrap}
+  .timing .t-why{color:var(--chalk);opacity:.82;flex:1;min-width:150px}
+  .timing.t-buy{background:rgba(47,227,154,.08);border:1px solid rgba(47,227,154,.3)}
+  .timing.t-buy .t-lab{color:#2fe39a}
+  .timing.t-wait{background:rgba(245,196,81,.06);border:1px solid rgba(245,196,81,.26)}
+  .timing.t-wait .t-lab{color:var(--gold)}
+  .timing.t-warn{background:rgba(245,107,107,.08);border:1px solid rgba(245,107,107,.32)}
+  .timing.t-warn .t-lab{color:var(--coral)}
+  .cmp-link{display:inline-flex;align-items:center;gap:5px;margin:7px 0 1px;font-family:'Space Mono',monospace;font-size:10.5px;color:#7fd4ff;text-decoration:none;border-bottom:1px dotted rgba(127,212,255,.45);padding-bottom:1px}
+  .cmp-link:hover{color:#a9e2ff;border-bottom-color:#a9e2ff}
+  .rounds{max-width:1240px;margin:0 auto}
+  .round{margin-top:clamp(34px,5vw,56px)}
+  .round.tracked .round-head{border-color:var(--gold-deep)}
+  .round-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--card-line);padding-bottom:10px;margin-bottom:20px}
+  .round-head .n{font-family:'Space Mono',monospace;color:var(--gold);font-size:13px;letter-spacing:.2em}
+  .round-head h2{font-family:'Anton',sans-serif;font-weight:400;text-transform:uppercase;font-size:clamp(24px,4.4vw,40px);line-height:1}
+  .round-head .face{font-family:'Space Mono',monospace;color:var(--chalk-dim);font-size:11.5px;background:rgba(255,255,255,.04);border:1px solid var(--card-line);padding:3px 9px;border-radius:6px}
+  .round-head .when{font-family:'Space Mono',monospace;color:var(--chalk-dim);font-size:12px;margin-left:auto;letter-spacing:.05em}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(284px,1fr))}
+  .grid.qf{grid-template-columns:repeat(auto-fill,minmax(304px,1fr))}
+  .grid.sf{grid-template-columns:repeat(auto-fill,minmax(344px,1fr))}
+  .match{background:linear-gradient(180deg,var(--card),var(--pitch-2));border:1px solid var(--card-line);border-radius:14px;padding:13px 14px 12px;transition:transform .15s,border-color .15s,box-shadow .15s}
+  .match:hover{transform:translateY(-3px);border-color:var(--gold-deep);box-shadow:0 12px 28px rgba(0,0,0,.4)}
+  .match.tracked{border-color:var(--gold-deep)}
+  .match .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+  .match .mid{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--gold);background:rgba(245,196,81,.12);padding:2px 7px;border-radius:5px}
+  .match .venue{font-family:'Space Mono',monospace;font-size:11px;color:var(--chalk-dim);text-align:right;letter-spacing:.02em;line-height:1.3}
+  .team{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px}
+  .team + .team{margin-top:5px}
+  .team .flag{font-size:21px;line-height:1;width:26px;text-align:center;flex:none}
+  .team .nm{font-weight:600;font-size:15.5px;letter-spacing:.01em}
+  .team .slot{font-family:'Space Mono',monospace;font-size:10px;color:var(--chalk-dim);margin-left:auto;letter-spacing:.05em;flex:none}
+  .team.win{background:linear-gradient(90deg,rgba(245,196,81,.18),rgba(245,196,81,.04));box-shadow:inset 3px 0 0 var(--gold)}
+  .team.win .nm{color:#fff;font-weight:800}
+  .team.win .slot{color:var(--gold);font-weight:700}
+  .team.out{opacity:.5}.team.out .nm{font-weight:500}
+  .team.vs{justify-content:center;padding:3px;color:var(--chalk-dim);font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.2em}
+  .team.tclick{cursor:pointer}
+  .team.tclick:hover .nm{text-decoration:underline;color:#fff}
+  /* price block */
+  .pricebox{margin-top:11px;padding-top:10px;border-top:1px dashed var(--card-line)}
+  .cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .cat{font-family:'Space Mono',monospace;font-size:11.5px;color:var(--chalk);background:rgba(0,0,0,.22);border:1px solid var(--card-line);border-radius:999px;padding:5px 10px;cursor:pointer;transition:.12s}
+  .cat:hover{border-color:var(--gold)}
+  .cat .c{color:var(--chalk-dim);margin-right:5px}
+  .cat.sel{background:linear-gradient(90deg,rgba(245,196,81,.25),rgba(245,196,81,.08));border-color:var(--gold);color:#fff;font-weight:700}
+  .cat.sel .c{color:var(--gold)}
+  .cat .deck{display:block;font-size:9px;letter-spacing:.06em;color:var(--chalk-dim);text-transform:uppercase;margin-top:2px;font-weight:400}
+  .cat.sel .deck{color:var(--gold)}
+  .price{display:flex;align-items:center;gap:8px}
+  .price label{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--chalk-dim);flex:none}
+  .price .dollar{color:var(--gold);font-family:'Space Mono',monospace;font-weight:700;flex:none}
+  .price input{flex:1;min-width:0;background:rgba(0,0,0,.25);border:1px solid var(--card-line);border-radius:7px;color:#fff;font-family:'Space Mono',monospace;font-size:14px;padding:6px 8px}
+  .price input:focus{outline:none;border-color:var(--gold)}
+  .price input.set{border-color:var(--gold-deep);color:var(--gold);font-weight:700}
+  .price .facetag{font-family:'Space Mono',monospace;font-size:10px;color:var(--chalk-dim);flex:none}
+  .final-wrap{display:grid;gap:14px;grid-template-columns:1.6fr 1fr}
+  .match.final{border-color:var(--gold);background:linear-gradient(180deg,rgba(245,196,81,.10),var(--pitch-2))}
+  .match.final .mid{background:var(--gold);color:#1a1205}
+  .match.bronze{opacity:.95}
+  .meta-right{display:flex;align-items:center;gap:7px;flex:none}
+  .venue-line{font-family:'Space Mono',monospace;font-size:11px;color:var(--chalk-dim);letter-spacing:.02em;line-height:1.3;margin:-4px 0 9px}
+  .star{background:none;border:none;cursor:pointer;font-size:17px;line-height:1;color:var(--card-line);padding:0 2px;transition:.12s}
+  .star:hover{color:var(--gold);transform:scale(1.15)}
+  .star.on{color:var(--gold);text-shadow:0 0 9px rgba(245,196,81,.55)}
+  .deal{font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.1em;color:#06231c;background:#2fe39a;padding:3px 7px;border-radius:5px;white-space:nowrap}
+  .match.starred{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 10px 26px rgba(0,0,0,.45)}
+  .round.starred-sec h2{color:var(--gold)}
+  .round.starred-sec .round-head .n{background:var(--gold);color:#1a1205;border-color:var(--gold)}
+  .match.starred:hover{box-shadow:0 0 0 1px var(--gold),0 14px 30px rgba(0,0,0,.5)}
+  .mkt{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px;padding-top:9px;border-top:1px dashed var(--card-line);font-family:'Space Mono',monospace;font-size:11px}
+  .mkt .mlbl{color:var(--chalk-dim);text-transform:uppercase;font-size:9px;letter-spacing:.12em}
+  .mkt .mval{color:#7fd4ff;font-weight:700}
+  .mkt .mavg{color:var(--chalk-dim);background:rgba(127,212,255,.08);border-radius:5px;padding:1px 6px;font-size:10px}
+  .mkt .msrc{color:var(--chalk-dim);font-size:10px}
+  .mkt .cmp{margin-left:auto;font-size:10px;font-weight:700}
+  .mkt .cmp.under{color:#2fe39a}
+  .mkt .cmp.over{color:var(--chalk-dim);font-weight:400}
+  .cardnote{margin-top:10px;display:flex;gap:8px;align-items:flex-start;font-size:11.5px;line-height:1.45;color:var(--chalk);background:rgba(127,212,255,.06);border:1px solid rgba(127,212,255,.25);border-radius:9px;padding:8px 10px}
+  .cardnote .ntag{font-family:'Space Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.12em;color:#06231c;background:#7fd4ff;padding:2px 6px;border-radius:4px;flex:none;margin-top:1px}
+  .getin{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:8px 0 2px;font-family:'Space Mono',monospace;font-size:11px}
+  .getin .gi-lbl{color:var(--chalk-dim);text-transform:uppercase;font-size:9px;letter-spacing:.12em}
+  .getin .gi-val{color:#fff;font-weight:700;font-size:13px}
+  .getin .gi-wow{font-weight:700;font-size:10px;letter-spacing:.04em;padding:1px 6px;border-radius:5px}
+  .getin .gi-wow.down{color:#06231c;background:#2fe39a}
+  .getin .gi-wow.up{color:#2a0a0a;background:var(--coral)}
+  .getin .gi-wow.flat{color:var(--chalk-dim);background:rgba(255,255,255,.07)}
+  .getin .gi-asof{color:var(--chalk-dim);opacity:.7;font-size:9.5px;margin-left:auto}
+  .stakes{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:9px 0 2px;font-family:'Space Mono',monospace;font-size:10.5px;line-height:1.4}
+  .stakes .sk-tag{font-size:9px;font-weight:700;letter-spacing:.09em;padding:2px 7px;border-radius:5px;flex:none}
+  .stakes .sk-why{color:var(--chalk-dim);flex:1;min-width:140px}
+  .stakes.st-high .sk-tag{color:#06231c;background:#2fe39a}
+  .stakes.st-med .sk-tag{color:#1a1205;background:var(--gold)}
+  .stakes.st-dead .sk-tag{color:#2a0a0a;background:var(--coral)}
+  .prob{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:9px 0 2px;font-family:'Space Mono',monospace;font-size:11px}
+  .prob .ptag{font-size:9px;font-weight:700;letter-spacing:.1em;color:#06231c;background:var(--gold);padding:2px 6px;border-radius:4px;flex:none}
+  .prob.conf .ptag{background:#2fe39a}
+  .prob.conf{color:var(--chalk-dim);font-size:10.5px;letter-spacing:.04em}
+  .prob .pteam{color:var(--chalk);background:rgba(255,255,255,.05);border:1px solid var(--card-line);border-radius:5px;padding:2px 7px}
+  .prob .pteam.clinched{color:#2fe39a;background:rgba(47,227,154,.12);border-color:rgba(47,227,154,.45);font-weight:700}
+  .prob .pboth{color:var(--gold);margin-left:auto;font-weight:700}
+  .team.vs.score{color:var(--gold);font-weight:700;font-family:'Space Mono',monospace;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px;height:auto;padding:4px 0}
+  .team.vs.score .ft{font-size:8px;color:var(--chalk-dim);letter-spacing:.1em;border:1px solid var(--card-line);border-radius:4px;padding:1px 4px}
+  .match.done{opacity:.6}
+  .match.done:hover{opacity:.9}
+  footer{max-width:1240px;margin:46px auto 0;color:var(--chalk-dim);font-size:12.5px;line-height:1.6;border-top:1px solid var(--card-line);padding-top:18px;font-family:'Space Mono',monospace;letter-spacing:.02em}
+  @media (max-width:680px){.final-wrap{grid-template-columns:1fr}.round-head .when{margin-left:0}.budget .hint{margin-left:0;flex-basis:100%}}
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">FIFA World Cup 2026 · Projected Knockouts + Ticket Tracker</div>
+  <h1>Road to<br>MetLife</h1>
+  <p class="sub">A full <b>Round of 32 → Final</b> projection plus a live <b>ticket tracker</b>. Tap a seating category to add its price to your budget, or type a custom number. Group-stage games you're actively pricing get pinned up top. Prices save automatically. Teams in the knockout rounds are predictions — a living guess until the groups finish.</p>
+</header>
+<div class="champ">
+  <div class="trophy">🏆</div>
+  <div>
+    <div class="label">Projected Champion · July 19 · MetLife Stadium</div>
+    <div class="name"><span class="flag">🇪🇸</span>Spain</div>
+    <div class="note">Over Argentina in a near coin-flip final — Spain edge it as the in-form, top-ranked side.</div>
+  </div>
+</div>
+<div class="budget">
+  <div class="stat gold"><b id="b-total">$0</b><span>Tracked total</span></div>
+  <div class="stat"><b id="b-fee">$0</b><span>+15% buyer fee</span></div>
+  <div class="stat"><b id="b-count">0</b><span>Matches selected</span></div>
+  <div class="hint" id="b-status">Tap a category chip to add it to your budget.</div>
+  <button id="b-clear">Clear all</button>
+</div>
+<div class="legend">
+  <span class="key"><span class="swatch win"></span> Predicted to advance</span>
+  <span class="key"><span class="swatch out"></span> Predicted out</span>
+  <span class="key">Enter a price to count it toward your budget · Face = FIFA face range</span>
+</div>
+<div class="srcbanner" id="srcbanner">
+  <span class="tag">SOURCE</span>
+  <span>The big green number is the <b>average all-in resale price</b> per match (mostly <b>Vivid Seats</b>) — the most realistic gauge of what seats actually sell for. FIFA's own resale floor was removed (it can be misleading). For the true cheapest seat right now, tap <b>Compare</b> on any card to check the live sites yourself.</span>
+</div>
+<div class="livepanel">
+  <div class="live-head">
+    <span class="live-title"><span class="dot"></span>Live scores</span>
+    <button id="refreshBtn">↻ Refresh</button>
+  </div>
+  <div class="live-body" id="liveBody">
+    <div class="live-snap">
+      <div><span class="snap-lbl">FINAL · Mon Jun 22</span></div>
+      <div class="snap-g"><b>Argentina 2–0 Austria</b> · France 3–0 Iraq · Norway 3–2 Senegal</div>
+      <div><span class="snap-lbl">FINAL · Jun 20–21</span></div>
+      <div class="snap-g">Spain 4–0 Saudi Arabia · Japan 4–0 Tunisia · Germany 2–1 Ivory Coast · Egypt 3–1 New Zealand · Uruguay 2–2 Cape Verde · Belgium 0–0 Iran · Ecuador 0–0 Curaçao</div>
+      <div><span class="snap-lbl">NEXT UP</span></div>
+      <div class="snap-g">Tue Jun 23: England–Ghana, Panama–Croatia, Portugal–Uzbekistan · Wed Jun 24: <b>Scotland–Brazil</b>, Morocco–Haiti, Czechia–Mexico</div>
+      <div class="snap-note">Snapshot as of Jun 22, 9 PM ET — not a live feed. Ask Claude to refresh it, or open this inside Claude.ai and tap Refresh.</div>
+    </div>
+  </div>
+</div>
+<div class="favbar">
+  <span class="favbar-label">♥ Following</span>
+  <span id="favChips"></span>
+  <select id="favAdd"><option value="">+ Add team…</option></select>
+  <span class="favbar-label" style="margin-left:14px">🔎 Show only</span>
+  <select id="teamSel"><option value="all">All teams</option></select>
+</div>
+<div class="tabs" id="cityTabs">
+  <span class="favbar-label">📍 Filter by location</span>
+  <select id="citySel"><option value="all">All cities</option></select>
+</div>
+<main class="rounds" id="rounds"></main>
+<footer id="foot"></footer>
+<script>
+const F={MEX:"🇲🇽",KOR:"🇰🇷",SUI:"🇨🇭",CAN:"🇨🇦",BRA:"🇧🇷",MAR:"🇲🇦",JPN:"🇯🇵",USA:"🇺🇸",PAR:"🇵🇾",GER:"🇩🇪",ECU:"🇪🇨",NED:"🇳🇱",BEL:"🇧🇪",EGY:"🇪🇬",ESP:"🇪🇸",URU:"🇺🇾",FRA:"🇫🇷",NOR:"🇳🇴",ARG:"🇦🇷",AUT:"🇦🇹",POR:"🇵🇹",COL:"🇨🇴",ENG:"🏴󠁧󠁢󠁥󠁮󠁧󠁿",CRO:"🇭🇷",CZE:"🇨🇿",AUS:"🇦🇺",SCO:"🏴󠁧󠁢󠁳󠁣󠁴󠁿",CIV:"🇨🇮",SWE:"🇸🇪",CPV:"🇨🇻",SEN:"🇸🇳",GHA:"🇬🇭",RSA:"🇿🇦",QAT:"🇶🇦",BIH:"🇧🇦",HTI:"🇭🇹",TUR:"🇹🇷",CUW:"🇨🇼",IRN:"🇮🇷",NZL:"🇳🇿",KSA:"🇸🇦",IRQ:"🇮🇶",JOR:"🇯🇴",DZA:"🇩🇿",UZB:"🇺🇿",COD:"🇨🇩",PAN:"🇵🇦",TUN:"🇹🇳"};
+const N={MEX:"Mexico",KOR:"Korea Rep.",SUI:"Switzerland",CAN:"Canada",BRA:"Brazil",MAR:"Morocco",JPN:"Japan",USA:"USA",PAR:"Paraguay",GER:"Germany",ECU:"Ecuador",NED:"Netherlands",BEL:"Belgium",EGY:"Egypt",ESP:"Spain",URU:"Uruguay",FRA:"France",NOR:"Norway",ARG:"Argentina",AUT:"Austria",POR:"Portugal",COL:"Colombia",ENG:"England",CRO:"Croatia",CZE:"Czechia",AUS:"Australia",SCO:"Scotland",CIV:"Ivory Coast",SWE:"Sweden",CPV:"Cape Verde",SEN:"Senegal",GHA:"Ghana",RSA:"South Africa",QAT:"Qatar",BIH:"Bosnia & Herz.",HTI:"Haiti",TUR:"Türkiye",CUW:"Curaçao",IRN:"IR Iran",NZL:"New Zealand",KSA:"Saudi Arabia",IRQ:"Iraq",JOR:"Jordan",DZA:"Algeria",UZB:"Uzbekistan",COD:"Congo DR",PAN:"Panama",TUN:"Tunisia"};
+
+// Per-match category prices you've pulled from the FIFA site.
+const CATS={
+  43:{"1":2400,"2":2300},
+  45:{"1":1600,"2":1100},
+  49:{"1":2500,"2":2300},
+  76:{"1":2000,"2":1800},
+  89:{"1":2700,"2":2200},
+  95:{"1":2800,"2":2200},
+  99:{"1":3700,"2":3300},
+  97:{"1":2700,"2":1300},
+  100:{"1":3600,"2":2900},
+  102:{"1":3400,"2":2900},
+  91:{"1":2700,"2":2200},
+  90:{"1":2000,"2":1900},
+  93:{"1":2500,"2":1900},
+  94:{"1":3300,"2":2400}
+};
+// What each seating category maps to (roughly stadium-independent).
+const DECK={"1":"lower deck","2":"upper deck","3":"upper, high","4":"value"};
+
+// Average all-in resale price per match (mostly Vivid Seats) — the most realistic
+// gauge of what seats actually sell for. FIFA-resale floor numbers removed (misleading).
+// To add an average: pull a match's Vivid page and drop in {avg:NNNN,src:"Vivid"}.
+const MARKET={
+  49:{avg:3386,src:"Vivid"},
+  76:{avg:3203,src:"Vivid"},
+  86:{avg:4941,src:"Vivid"},
+  99:{avg:3411,src:"SeatPick"},
+  104:{avg:15511,src:"Vivid"}
+};
+
+// ── Get-in price tracking ───────────────────────────────────────────
+// "Get-in" = the cheapest listed ticket for a match (the price to get in the
+// door), per-match not per-seat. We keep a short dated history per match id so
+// the card can show week-over-week movement. Refresh (inside Claude.ai) appends
+// a fresh reading; the WoW % is computed against the reading ~7 days earlier.
+// Seed below is illustrative on a few favorites so the badge renders right away
+// — real readings overwrite it on the first price refresh.
+const GETIN_SEED={
+  76:[{d:"2026-06-16",p:310},{d:"2026-06-23",p:282}],   // Brazil R32 · Houston   ▼9%
+  86:[{d:"2026-06-16",p:520},{d:"2026-06-23",p:545}],   // Argentina R32 · Miami  ▲5%
+  104:[{d:"2026-06-16",p:2200},{d:"2026-06-23",p:2030}] // Final · MetLife        ▼8%
+};
+
+// Per-card seating / buying notes.
+const NOTES={
+  76:"Brazil supporters' end = behind-goal 100-level (≈ sections 112–121 or 132–138), FIFA Cat 3 — rowdier AND cheaper than the midfield sidelines (102–111 / 122–131). Avoid those longside sections if you want the drum-and-flag crowd."
+};
+
+// Monte Carlo (20k sims): probability the PROJECTED teams actually fill each knockout slot.
+// pa/pb = chance each projected team is there; both = chance of the exact projected matchup.
+const PROB={
+  73:{a:'KOR',pa:54,b:'SUI',pb:35,both:19},
+  74:{a:'GER',pa:99,b:'CZE',pb:4,both:4},
+  75:{a:'NED',pa:69,b:'MAR',pb:54,both:37},
+  76:{a:'BRA',pa:53,b:'JPN',pb:48,both:26},
+  77:{a:'FRA',pa:71,b:'AUS',pb:27,both:19},
+  78:{a:'ECU',pa:52,b:'NOR',pb:66,both:34},
+  79:{a:'MEX',pa:95,b:'SCO',pb:51,both:48},
+  80:{a:'ENG',pa:93,b:'CIV',pb:16,both:15},
+  81:{a:'USA',pa:82,b:'SWE',pb:15,both:13},
+  82:{a:'BEL',pa:54,b:'CPV',pb:12,both:7},
+  83:{a:'COL',pa:33,b:'CRO',pb:72,both:24},
+  84:{a:'ESP',pa:92,b:'AUT',pb:74,both:69},
+  85:{a:'CAN',pa:55,b:'SEN',pb:9,both:5},
+  86:{a:'ARG',pa:78,b:'URU',pb:86,both:67},
+  87:{a:'POR',pa:35,b:'GHA',pb:67,both:23},
+  88:{a:'PAR',pa:42,b:'EGY',pb:9,both:4},
+  89:{a:'GER',pa:82,b:'FRA',pb:64,both:52},
+  90:{a:'SUI',pa:21,b:'NED',pb:40,both:8},
+  91:{a:'BRA',pa:38,b:'NOR',pb:43,both:16},
+  93:{a:'COL',pa:18,b:'ESP',pb:73,both:13},
+  94:{a:'USA',pa:51,b:'BEL',pb:45,both:23},
+  95:{a:'ARG',pa:56,b:'PAR',pb:17,both:10},
+  97:{a:'FRA',pa:43,b:'NED',pb:33,both:14},
+  99:{a:'BRA',pa:29,b:'ENG',pb:66,both:18},
+  100:{a:'ARG',pa:47,b:'POR',pb:24,both:11},
+  102:{a:'BRA',pa:17,b:'ARG',pb:35,both:6}
+};
+
+// Tracked group-stage games (pinned at top).
+// (Group-stage games now live in the REMAINING section below; starring handles tracking.)
+
+// Remaining group games (Matchday 3, Jun 24–27). Teams confirmed; a few venues still TBC.
+const REMAINING={id:"rem",title:"Remaining Group Games",when:"Jun 22 – 27",cls:"",face:"$60–$2,735",matches:[
+  {id:43,v:"Dallas Stadium (AT&T) · Mon Jun 22 · 12:00",t:[["ARG","J1"],["AUT","J3"]],group:true},
+  {id:45,v:"Boston Stadium (Gillette) · Tue Jun 23 · 4:00 ET",t:[["ENG","L1"],["GHA","L2"]],group:true},
+  {id:49,v:"Hard Rock Stadium · Miami · Wed Jun 24 · 6:00 ET",t:[["BRA","C1"],["SCO","C3"]],group:true},
+  {id:50,glabel:"Grp A",v:"Estadio Azteca · Mexico City · Wed Jun 24 · 9:00 ET",t:[["CZE","A"],["MEX","A"]],group:true},
+  {id:51,glabel:"Grp A",v:"Estadio BBVA · Monterrey · Wed Jun 24 · 9:00 ET",t:[["RSA","A"],["KOR","A"]],group:true},
+  {id:52,glabel:"Grp B",v:"BC Place · Vancouver · Wed Jun 24 · 3:00 ET",t:[["SUI","B"],["CAN","B"]],group:true},
+  {id:53,glabel:"Grp B",v:"Venue TBC · Wed Jun 24 · 3:00 ET",t:[["BIH","B"],["QAT","B"]],group:true},
+  {id:54,glabel:"Grp C",v:"Venue TBC · Wed Jun 24 · 6:00 ET",t:[["MAR","C"],["HTI","C"]],group:true},
+  {id:55,glabel:"Grp D",v:"SoFi Stadium · Los Angeles · Thu Jun 25 · 10:00 ET",t:[["TUR","D"],["USA","D"]],group:true},
+  {id:56,glabel:"Grp D",v:"Levi's Stadium · SF Bay Area · Thu Jun 25 · 10:00 ET",t:[["PAR","D"],["AUS","D"]],group:true},
+  {id:57,glabel:"Grp E",v:"MetLife · New York/NJ · Thu Jun 25 · 4:00 ET",t:[["ECU","E"],["GER","E"]],group:true},
+  {id:58,glabel:"Grp E",v:"Lincoln Financial · Philadelphia · Thu Jun 25 · 4:00 ET",t:[["CUW","E"],["CIV","E"]],group:true},
+  {id:59,glabel:"Grp F",v:"AT&T Stadium · Dallas · Thu Jun 25 · 7:00 ET",t:[["JPN","F"],["SWE","F"]],group:true},
+  {id:60,glabel:"Grp F",v:"Arrowhead · Kansas City · Thu Jun 25 · 7:00 ET",t:[["TUN","F"],["NED","F"]],group:true},
+  {id:61,glabel:"Grp G",v:"Lumen Field · Seattle · Fri Jun 26 · 11:00 ET",t:[["EGY","G"],["IRN","G"]],group:true},
+  {id:62,glabel:"Grp G",v:"BC Place · Vancouver · Fri Jun 26 · 11:00 ET",t:[["NZL","G"],["BEL","G"]],group:true},
+  {id:63,glabel:"Grp H",v:"NRG Stadium · Houston · Fri Jun 26 · 8:00 ET",t:[["CPV","H"],["KSA","H"]],group:true},
+  {id:64,glabel:"Grp H",v:"Estadio Akron · Guadalajara · Fri Jun 26 · 8:00 ET",t:[["URU","H"],["ESP","H"]],group:true},
+  {id:65,glabel:"Grp I",v:"Gillette Stadium · Boston · Fri Jun 26 · 3:00 ET",t:[["NOR","I"],["FRA","I"]],group:true},
+  {id:66,glabel:"Grp I",v:"BMO Field · Toronto · Fri Jun 26 · 3:00 ET",t:[["SEN","I"],["IRQ","I"]],group:true},
+  {id:67,glabel:"Grp J",v:"AT&T Stadium · Dallas · Sat Jun 27 · 10:00 ET",t:[["JOR","J"],["ARG","J"]],group:true},
+  {id:68,glabel:"Grp J",v:"Arrowhead · Kansas City · Sat Jun 27 · 10:00 ET",t:[["DZA","J"],["AUT","J"]],group:true},
+  {id:69,glabel:"Grp K",v:"Venue TBC · Sat Jun 27",t:[["POR","K"],["COL","K"]],group:true},
+  {id:70,glabel:"Grp K",v:"Venue TBC · Sat Jun 27",t:[["UZB","K"],["COD","K"]],group:true},
+  {id:71,glabel:"Grp L",v:"New York / NJ (MetLife) · Sat Jun 27 · 5:00 ET",t:[["ENG","L"],["PAN","L"]],group:true},
+  {id:72,glabel:"Grp L",v:"Venue TBC · Sat Jun 27",t:[["CRO","L"],["GHA","L"]],group:true}
+]};
+
+const ROUNDS=[
+ {id:"r32",title:"Round of 32",when:"Jun 28 – Jul 3",cls:"",face:"$105–$750",matches:[
+  {id:73,v:"Los Angeles (SoFi) · Sun Jun 28",t:[["KOR","2A"],["SUI","2B"]],w:"SUI"},
+  {id:74,v:"Boston (Gillette) · Mon Jun 29",t:[["GER","1E"],["CZE","3rd·A"]],w:"GER"},
+  {id:75,v:"Monterrey (BBVA) · Mon Jun 29",t:[["NED","1F"],["MAR","2C"]],w:"NED"},
+  {id:76,v:"Houston (NRG) · Mon Jun 29 · 1:00 ET",t:[["BRA","1C"],["JPN","2F"]],w:"BRA"},
+  {id:77,v:"New York / NJ (MetLife) · Tue Jun 30",t:[["FRA","1I"],["AUS","3rd·D"]],w:"FRA"},
+  {id:78,v:"Dallas (AT&T) · Tue Jun 30",t:[["ECU","2E"],["NOR","2I"]],w:"NOR"},
+  {id:79,v:"Mexico City (Azteca) · Tue Jun 30",t:[["MEX","1A"],["SCO","3rd·C"]],w:"MEX"},
+  {id:80,v:"Atlanta (Mercedes-Benz) · Wed Jul 1",t:[["ENG","1L"],["CIV","3rd·E"]],w:"ENG"},
+  {id:81,v:"SF Bay (Levi's) · Wed Jul 1",t:[["USA","1D"],["SWE","3rd·F"]],w:"USA"},
+  {id:82,v:"Seattle (Lumen) · Wed Jul 1",t:[["BEL","1G"],["CPV","3rd·H"]],w:"BEL"},
+  {id:83,v:"Toronto (BMO) · Thu Jul 2",t:[["COL","2K"],["CRO","2L"]],w:"COL"},
+  {id:84,v:"Los Angeles (SoFi) · Thu Jul 2",t:[["ESP","1H"],["AUT","2J"]],w:"ESP"},
+  {id:85,v:"Vancouver (BC Place) · Thu Jul 2",t:[["CAN","1B"],["SEN","3rd·I"]],w:"CAN"},
+  {id:86,v:"Miami (Hard Rock) · Fri Jul 3",t:[["ARG","1J"],["URU","2H"]],w:"ARG"},
+  {id:87,v:"Kansas City (Arrowhead) · Fri Jul 3",t:[["POR","1K"],["GHA","3rd·L"]],w:"POR"},
+  {id:88,v:"Dallas (AT&T) · Fri Jul 3",t:[["PAR","2D"],["EGY","2G"]],w:"PAR"},
+ ]},
+ {id:"r16",title:"Round of 16",when:"Jul 4 – Jul 7",cls:"",face:"$170–$980",matches:[
+  {id:89,v:"Philadelphia (Linc) · Sat Jul 4 · 5:00 ET",t:[["GER","W74"],["FRA","W77"]],w:"FRA"},
+  {id:90,v:"Houston (NRG) · Sat Jul 4 · 1:00 ET",t:[["SUI","W73"],["NED","W75"]],w:"NED"},
+  {id:91,v:"New York / NJ (MetLife) · Sun Jul 5 · 4:00 ET",t:[["BRA","W76"],["NOR","W78"]],w:"BRA"},
+  {id:92,v:"Mexico City (Azteca) · Sun Jul 5 · 8:00 ET",t:[["MEX","W79"],["ENG","W80"]],w:"ENG"},
+  {id:93,v:"Dallas (AT&T) · Mon Jul 6 · 3:00 ET",t:[["COL","W83"],["ESP","W84"]],w:"ESP"},
+  {id:94,v:"Seattle (Lumen) · Mon Jul 6 · 8:00 ET",t:[["USA","W81"],["BEL","W82"]],w:"BEL"},
+  {id:95,v:"Atlanta (Mercedes-Benz) · Tue Jul 7 · 12:00 ET",t:[["ARG","W86"],["PAR","W88"]],w:"ARG"},
+  {id:96,v:"Vancouver (BC Place) · Tue Jul 7 · 4:00 ET",t:[["CAN","W85"],["POR","W87"]],w:"POR"},
+ ]},
+ {id:"qf",title:"Quarterfinals",when:"Jul 9 – Jul 11",cls:"qf",face:"$275–$1,775",matches:[
+  {id:97,v:"Boston (Gillette) · Thu Jul 9",t:[["FRA","W89"],["NED","W90"]],w:"FRA"},
+  {id:98,v:"Los Angeles (SoFi) · Fri Jul 10",t:[["ESP","W93"],["BEL","W94"]],w:"ESP"},
+  {id:99,v:"Miami (Hard Rock) · Sat Jul 11 · 5:00 ET",t:[["BRA","W91"],["ENG","W92"]],w:"BRA"},
+  {id:100,v:"Kansas City (Arrowhead) · Sat Jul 11 · 9:00 ET",t:[["ARG","W95"],["POR","W96"]],w:"ARG"},
+ ]},
+ {id:"sf",title:"Semifinals",when:"Jul 14 – Jul 15",cls:"sf",face:"$420–$3,295",matches:[
+  {id:101,v:"Dallas (AT&T) · Tue Jul 14 · 3:00 ET",t:[["FRA","W97"],["ESP","W98"]],w:"ESP"},
+  {id:102,v:"Atlanta (Mercedes-Benz) · Wed Jul 15 · 3:00 ET",t:[["BRA","W99"],["ARG","W100"]],w:"ARG"},
+ ]},
+];
+const FINAL={
+ final:{id:104,v:"MetLife · NJ · Sun Jul 19 · 3:00 ET",t:[["ESP","W101"],["ARG","W102"]],w:"ESP",face:"$2,030–$7,875"},
+ bronze:{id:103,v:"Hard Rock · Miami · Sat Jul 18 · 5:00 ET",t:[["FRA","L101"],["BRA","L102"]],w:"FRA",face:"$165–$1,070"}
+};
+
+// seed defaults (stored edits override these)
+const SEED_PRICES={43:2300,45:1100,49:2300,76:1800,89:2200,95:2200,99:3300,97:1300,100:2900,102:2900,91:2200,90:1900,93:1900,94:2400}, SEED_PICKS={43:"2",45:"2",49:"2",76:"2",89:"2",95:"2",99:"2",97:"2",100:"2",102:"2",91:"2",90:"2",93:"2",94:"2"};
+let prices=Object.assign({},SEED_PRICES);
+let picks=Object.assign({},SEED_PICKS);
+let stars={};
+let DEALS=new Set();
+let cityFilter="all";
+let teamFilter="all";
+let liveResults={};
+// Completed results baked in by Claude (so the downloaded file shows them without a live refresh).
+// Keyed by the two team codes sorted + joined. Updated Jun 22, 2026.
+const SEED_RESULTS={
+  "ARG-AUT":{h:"ARG",a:"AUT",hs:2,as:0,st:"FT"}
+};
+let favTeams=["ARG","BRA"];
+let getinHist={};      // per-match get-in price history (see GETIN_SEED)
+let STANDINGS={};      // live group points/played, populated by Refresh (see stakes block)
+const STORE_KEY="wc-tracker-v2";
+
+function applyState(s){
+  prices=Object.assign({},SEED_PRICES,s.prices||{});
+  picks=Object.assign({},SEED_PICKS,s.picks||{});
+  stars=Object.assign({},s.stars||{});
+  liveResults=Object.assign({},SEED_RESULTS,s.liveResults||{});
+  getinHist=Object.assign({},GETIN_SEED,s.getinHist||{});
+  STANDINGS=Object.assign({},s.STANDINGS||{});
+  if(Array.isArray(s.favTeams))favTeams=s.favTeams;
+}
+function hasWS(){return typeof window!=="undefined"&&window.storage&&typeof window.storage.get==="function";}
+async function load(){
+  try{
+    let raw=null;
+    if(hasWS()){const r=await window.storage.get(STORE_KEY,false);raw=r&&r.value;}
+    else{try{raw=localStorage.getItem(STORE_KEY);}catch(e){}}
+    if(raw)applyState(JSON.parse(raw));
+  }catch(e){}
+}
+async function save(){
+  const payload=JSON.stringify({prices,picks,stars,liveResults,favTeams,getinHist,STANDINGS});
+  try{
+    if(hasWS()){await window.storage.set(STORE_KEY,payload,false);}
+    else{localStorage.setItem(STORE_KEY,payload);}
+    setStatus("Saved \u2713");
+  }catch(e){setStatus("Saved this session only (storage off).");}
+}
+function setStatus(t){const el=document.getElementById("b-status");if(el)el.textContent=t;}
+
+function teamRow(code,slot,mode){
+  const cls="team "+(mode==="win"?"win":mode==="out"?"out":"neutral");
+  const slotTxt=mode==="win"?"\u25B2 ADV":slot;
+  return `<div class="${cls} tclick" data-team="${code}" title="Show only ${N[code]||code}'s games"><span class="flag">${F[code]}</span><span class="nm">${N[code]}</span><span class="slot">${slotTxt}</span></div>`;
+}
+function fmt(n){return "$"+Math.round(n).toLocaleString();}
+
+// map each match id to its round, so we can spot value within a round
+const ROUND_OF={};
+[REMAINING].concat(ROUNDS).forEach(r=>r.matches.forEach(m=>{ROUND_OF[m.id]=r.id;}));
+ROUND_OF[FINAL.final.id]="fin"; ROUND_OF[FINAL.bronze.id]="fin";
+
+// a match is a "deal" if its selected price is meaningfully below its round's average
+function computeDeals(){
+  const byRound={};
+  Object.keys(prices).forEach(id=>{
+    const r=ROUND_OF[id]; if(!r||isNaN(prices[id]))return;
+    (byRound[r]=byRound[r]||[]).push({id:String(id),p:prices[id]});
+  });
+  const deals=new Set();
+  Object.values(byRound).forEach(list=>{
+    if(list.length<2)return;
+    const avg=list.reduce((a,b)=>a+b.p,0)/list.length;
+    list.forEach(x=>{ if(x.p<=0.9*avg) deals.add(x.id); });
+  });
+  return deals;
+}
+
+function catChips(id){
+  const c=CATS[id];if(!c)return "";
+  const order=["1","2","3","4"];
+  const chips=order.filter(k=>c[k]!=null).map(k=>{
+    const sel=picks[id]===k?" sel":"";
+    const deck=DECK[k]?`<span class="deck">${DECK[k]}</span>`:"";
+    return `<button class="cat${sel}" data-id="${id}" data-cat="${k}" data-amt="${c[k]}" title="Category ${k} — ${DECK[k]||''}"><span class="c">C${k}</span>${fmt(c[k])}${deck}</button>`;
+  }).join("");
+  return `<div class="cats">${chips}</div>`;
+}
+
+function marketLine(id){
+  const mk=MARKET[id]; if(!mk)return "";
+  const sel=prices[id];
+  let cmp="";
+  if(sel!=null&&!isNaN(sel)){
+    const fifaAllIn=sel*1.15;            // FIFA Cat price + 15% buyer fee, to match all-in market price
+    const d=fifaAllIn-mk.low;
+    if(d>0)cmp=`<span class="cmp under">▼ ${fmt(d)} under FIFA all-in</span>`;
+    else if(d<0)cmp=`<span class="cmp over">▲ ${fmt(-d)} over FIFA all-in</span>`;
+    else cmp=`<span class="cmp">= FIFA all-in</span>`;
+  }
+  return `<div class="mkt"><span class="mlbl">Mkt low</span><span class="mval">${fmt(mk.low)}</span>${mk.avg?`<span class="mavg">avg ${fmt(mk.avg)}</span>`:""}<span class="msrc">${mk.src}</span>${cmp}</div>`;
+}
+function noteLine(id){
+  const n=NOTES[id]; if(!n)return "";
+  return `<div class="cardnote"><span class="ntag">TIP</span><span>${n}</span></div>`;
+}
+const MARQUEE=new Set(['USA','MEX','CAN','BRA','ARG','FRA','ENG','ESP','GER']);
+// Rules-based "best time to buy" — encodes the market dynamics we researched:
+// finals/marquee hold or climb (buy early); neutral games drift down (wait);
+// TBD knockout slots are cheap until a big team is confirmed, then spike.
+function buyTiming(m){
+  const id=m.id;
+  const stage=id===104?'final':(id===103?'bronze':(ROUND_OF[id]||'rem'));
+  const teams=m.t.map(t=>t[0]);
+  const favIn=teams.some(c=>favTeams.includes(c));
+  const marquee=favIn||teams.some(c=>MARQUEE.has(c));
+  const p=PROB[id]; const topProb=p?Math.max(p.pa||0,p.pb||0):0;
+  if(stage==='final')return{lab:'BUY EARLY',cls:'t-buy',why:'Finals hold or climb as the field sets — about the cheapest it gets. Waiting rarely pays off.'};
+  if(stage==='bronze')return{lab:'WATCH',cls:'t-wait',why:'3rd-place draws less demand; prices usually soften. Wait unless a big nation lands here.'};
+  if(m.group){
+    const st=gameStakes(m);
+    if(st.level==='dead')return{lab:'WAIT',cls:'t-wait',why:'Dead rubber — qualified teams rest stars, demand softens. Hold for the late dip.'};
+    if(st.level==='med')return{lab:marquee?'WATCH':'WAIT',cls:'t-wait',why:'One side is already through and may rotate — demand usually eases. No rush.'};
+    if(marquee)return{lab:'BUY NOW',cls:'t-buy',why:'Both still alive and high-demand — the price won\u2019t fall and can rise into kickoff. Lock it in.'};
+    return{lab:'WAIT',cls:'t-wait',why:'Neutral group prices keep drifting down. Hold for the last-minute dip near kickoff.'};
+  }
+  if(marquee){
+    if(topProb>=50)return{lab:'BUY NOW',cls:'t-buy',why:`Still cheap while the slot\u2019s TBD — it spikes once the favorite (~${topProb}%) is confirmed in. Buy before the bracket locks.`};
+    return{lab:'WATCH',cls:'t-warn',why:`A big team here would spike it, but they\u2019re only ~${topProb}% to reach this slot — let the bracket resolve first.`};
+  }
+  return{lab:'WAIT',cls:'t-wait',why:'No marquee team locked in; neutral knockout prices drift down — wait for the matchup to set.'};
+}
+function timingLine(m){
+  const t=buyTiming(m);
+  return `<div class="timing ${t.cls}"><span class="t-lab">\u23F1 ${t.lab}</span><span class="t-why">${t.why}</span></div>`;
+}
+function compareURL(m){
+  let q;
+  if(m.id===104)q="FIFA World Cup 2026 Final tickets MetLife";
+  else if(m.id===103)q="FIFA World Cup 2026 third place playoff tickets";
+  else if(m.group)q=(N[m.t[0][0]]||m.t[0][0])+" vs "+(N[m.t[1][0]]||m.t[1][0])+" World Cup 2026 tickets";
+  else q="FIFA World Cup 2026 Match "+m.id+" tickets";
+  return "https://www.google.com/search?q="+encodeURIComponent(q);
+}
+function compareLink(m){
+  return `<a class="cmp-link" href="${compareURL(m)}" target="_blank" rel="noopener noreferrer">\uD83D\uDD0D Compare prices across sites \u2197</a>`;
+}
+function priceHead(m){
+  const mk=MARKET[m.id];
+  if(mk&&mk.avg){
+    return `<div class="phead"><span class="ph-lbl">avg going price</span><span class="ph-amt">${fmt(mk.avg)}</span><span class="ph-src">${mk.src} · all-in</span></div>`;
+  }
+  return `<div class="phead none"><span class="ph-amt">—</span><span class="ph-src">no average yet · tap Compare below for live prices</span></div>`;
+}
+// Teams that have mathematically clinched a Round-of-32 spot (6 pts — can't miss top 2).
+// Verified against live FIFA standings on Jun 22, 2026. Exact seeding/venue still resolves matchday 3.
+const CLINCHED=new Set(["MEX","USA","GER","FRA","NOR","ARG"]);
+
+// ── Get-in price + week-over-week % ─────────────────────────────────
+// Reads the dated history in getinHist[id], shows the latest get-in price and
+// how it has moved versus the reading closest to 7 days earlier. Down = good
+// for a buyer (green); up = heating up (coral).
+function getinWoW(id){
+  const h=getinHist[id]; if(!h||!h.length)return null;
+  const s=[...h].sort((a,b)=>a.d<b.d?-1:1);
+  const latest=s[s.length-1];
+  const target=new Date(latest.d).getTime()-7*864e5;
+  let prev=null,best=Infinity;
+  for(let i=0;i<s.length-1;i++){
+    const diff=Math.abs(new Date(s[i].d).getTime()-target);
+    if(diff<best){best=diff;prev=s[i];}
+  }
+  let pct=null,dir="flat";
+  if(prev&&prev.p>0){pct=Math.round((latest.p-prev.p)/prev.p*100);dir=pct<0?"down":pct>0?"up":"flat";}
+  return {cur:latest.p,pct,dir,asof:latest.d};
+}
+function getinLine(id){
+  const w=getinWoW(id); if(!w)return "";
+  let badge="";
+  if(w.pct!=null){
+    const arrow=w.dir==="down"?"▼":w.dir==="up"?"▲":"●";
+    const txt=w.pct===0?"flat":Math.abs(w.pct)+"%";
+    badge=`<span class="gi-wow ${w.dir}">${arrow} ${txt} wk</span>`;
+  }
+  return `<div class="getin"><span class="gi-lbl">get-in</span><span class="gi-val">${fmt(w.cur)}</span>${badge}<span class="gi-asof">${esc(w.asof)}</span></div>`;
+}
+
+// ── Stakes signal: clinched / alive / dead rubber ───────────────────
+// "Does this game matter" computed from standings instead of hand-coded notes.
+// Group rosters are read straight off the fixtures. teamStatus() prefers live
+// STANDINGS points when present (populated by Refresh), and falls back to the
+// verified CLINCHED set otherwise — so it works today and gets fully automatic
+// once matchday 3 results land.
+const GROUP_OF={ARG:"J",AUT:"J",ENG:"L",GHA:"L",BRA:"C",SCO:"C"};
+[REMAINING].forEach(r=>r.matches.forEach(m=>{
+  const g=(m.glabel||"").replace("Grp ","").trim();
+  if(g)m.t.forEach(t=>{GROUP_OF[t[0]]=g;});
+}));
+const ELIMINATED=new Set([]); // none confirmed in the data yet; Refresh can add
+function computeStatus(code){
+  const me=STANDINGS[code]; if(!me||!me.grp)return null;
+  const peers=Object.keys(STANDINGS).filter(c=>STANDINGS[c].grp===me.grp);
+  if(peers.length<4)return null;                    // need the full group to be sure
+  const max=c=>STANDINGS[c].pts+(3-(STANDINGS[c].pl||0))*3;
+  const others=peers.filter(c=>c!==code);
+  if(others.filter(c=>max(c)>me.pts).length<=1)return "clinched";   // ≤1 team can finish above me → top 2 locked
+  if(others.filter(c=>STANDINGS[c].pts>max(code)).length>=2)return "eliminated";
+  return "alive";
+}
+function teamStatus(code){
+  return computeStatus(code) || (CLINCHED.has(code)?"clinched":ELIMINATED.has(code)?"eliminated":"alive");
+}
+function gameStakes(m){
+  if(!m.group)return {lab:"WIN OR GO HOME",cls:"st-high",level:"high",why:"Knockout — every game is do-or-die, demand holds."};
+  const a=m.t[0][0],b=m.t[1][0],sa=teamStatus(a),sb=teamStatus(b);
+  const safe=s=>s==="clinched"||s==="eliminated";
+  if(safe(sa)&&safe(sb)){
+    const both=sa==="clinched"&&sb==="clinched";
+    return {lab:"DEAD RUBBER",cls:"st-dead",level:"dead",
+      why:both?`${N[a]} & ${N[b]} both already through — likely rotation, softest demand.`:"Nothing at stake either side — expect rest & rotation."};
+  }
+  if(sa==="clinched"||sb==="clinched"){
+    const safeT=sa==="clinched"?a:b, liveT=sa==="clinched"?b:a;
+    return {lab:"ONE SIDE SAFE",cls:"st-med",level:"med",
+      why:`${N[safeT]} is through and may rest; ${N[liveT]} still has something to play for.`};
+  }
+  return {lab:"BOTH ALIVE",cls:"st-high",level:"high",why:"Both still fighting to qualify — full lineups, demand holds."};
+}
+function stakesLine(m){
+  if(!m.group)return "";
+  const s=gameStakes(m);
+  return `<div class="stakes ${s.cls}"><span class="sk-tag">\u2691 ${s.lab}</span><span class="sk-why">${esc(s.why)}</span></div>`;
+}
+
+function probLine(m){
+  if(m.group||m.id<73)return `<div class="prob conf"><span class="ptag">✓ SET</span>Teams confirmed</div>`;
+  const p=PROB[m.id]; if(!p)return "";
+  const r32=m.id>=73&&m.id<=88;
+  const cell=(code,pct)=>(r32&&CLINCHED.has(code))
+    ?`<span class="pteam clinched" title="Clinched a Round of 32 spot — exact seeding & venue set on matchday 3 (Jun 24–27)">${code} ✓ IN</span>`
+    :`<span class="pteam">${code} ${pct}%</span>`;
+  return `<div class="prob"><span class="ptag">MODEL</span>${cell(p.a,p.pa)}${cell(p.b,p.pb)}<span class="pboth">matchup ${p.both}%</span></div>`;
+}
+
+function resultFor(m){
+  if(!m.group)return null;
+  const k=[m.t[0][0],m.t[1][0]].sort().join("-");
+  return liveResults[k]||null;
+}
+function card(m,roundFace,extra=""){
+  const gres=m.group?resultFor(m):null;
+  let rows;
+  if(m.group){
+    let mid='<div class="team vs">VS</div>';
+    if(gres&&gres.hs!=null&&gres.as!=null){
+      const c0=m.t[0][0];
+      const s0=(gres.h===c0)?gres.hs:gres.as, s1=(gres.h===c0)?gres.as:gres.hs;
+      mid=`<div class="team vs score">${s0}–${s1}<span class="ft">${esc(gres.st||"FT")}</span></div>`;
+    }
+    rows=teamRow(m.t[0][0],m.t[0][1],"neutral")+mid+teamRow(m.t[1][0],m.t[1][1],"neutral");
+  }else{
+    rows=m.t.map(([c,s])=>teamRow(c,s,c===m.w?"win":"out")).join("");
+  }
+  const fc=m.face||roundFace||"";
+  const customVal=(prices[m.id]!=null)?prices[m.id]:"";
+  const hasCats=!!CATS[m.id];
+  const trackedCls=(prices[m.id]!=null)?" tracked":"";
+  const starOn=stars[m.id]?" on":"";
+  const starredCls=stars[m.id]?" starred":"";
+  const dealBadge=DEALS.has(String(m.id))?`<span class="deal">★ VALUE</span>`:"";
+  const doneCls=gres?" done":"";
+  const favCls=favTeams.some(c=>m.t.some(t=>t[0]===c))?" fav":"";
+  return `<div class="match ${extra}${trackedCls}${starredCls}${doneCls}${favCls}">
+    <div class="meta">
+      <span class="mid">${m.glabel||("M"+m.id)}</span>
+      <span class="meta-right">${dealBadge}<button class="star${starOn}" data-id="${m.id}" title="Star this game" aria-label="Star game">${stars[m.id]?"\u2605":"\u2606"}</button></span>
+    </div>
+    <div class="venue-line">${m.v}</div>
+    ${rows}
+    ${probLine(m)}
+    ${stakesLine(m)}
+    ${priceHead(m)}
+    ${getinLine(m.id)}
+    ${timingLine(m)}
+    ${compareLink(m)}
+    <div class="pricebox">
+      <div class="price">
+        <label>Price</label><span class="dollar">$</span>
+        <input type="number" inputmode="decimal" min="0" placeholder="enter price" data-id="${m.id}" value="${customVal}" class="${customVal!==""?"set":""}">
+        <span class="facetag">face ${fc}</span>
+      </div>
+    </div>
+    ${noteLine(m.id)}
+  </div>`;
+}
+
+const CITY_DEFS=[
+  {k:"ny",label:"New York / NJ",terms:["new york","metlife"]},
+  {k:"mia",label:"Miami",terms:["miami","hard rock"]},
+  {k:"nymia",label:"NY + Miami",terms:[]},
+  {k:"atl",label:"Atlanta",terms:["atlanta","mercedes-benz"]},
+  {k:"bos",label:"Boston",terms:["boston","gillette"]},
+  {k:"dal",label:"Dallas",terms:["dallas","at&t"]},
+  {k:"gdl",label:"Guadalajara",terms:["guadalajara","akron"]},
+  {k:"hou",label:"Houston",terms:["houston","nrg"]},
+  {k:"kc",label:"Kansas City",terms:["kansas city","arrowhead"]},
+  {k:"la",label:"Los Angeles",terms:["los angeles","sofi"]},
+  {k:"mex",label:"Mexico City",terms:["mexico city","azteca","banorte"]},
+  {k:"mty",label:"Monterrey",terms:["monterrey","bbva"]},
+  {k:"phi",label:"Philadelphia",terms:["philadelphia","lincoln financial"]},
+  {k:"sf",label:"San Francisco",terms:["sf bay","levi","san francisco"]},
+  {k:"sea",label:"Seattle",terms:["seattle","lumen"]},
+  {k:"tor",label:"Toronto",terms:["toronto","bmo"]},
+  {k:"van",label:"Vancouver",terms:["vancouver","bc place"]}
+];
+function cityTerms(k){const d=CITY_DEFS.find(x=>x.k===k);return d?d.terms:[];}
+function matchCity(m){
+  if(cityFilter==="all")return true;
+  const v=(m.v||"").toLowerCase();
+  if(cityFilter==="nymia")return cityTerms("ny").concat(cityTerms("mia")).some(t=>v.includes(t));
+  return cityTerms(cityFilter).some(t=>v.includes(t));
+}
+function populateCitySel(){
+  const cs=document.getElementById("citySel");
+  if(!cs)return;
+  cs.innerHTML='<option value="all">All cities</option>'+CITY_DEFS.map(d=>`<option value="${d.k}"${cityFilter===d.k?" selected":""}>${d.label}</option>`).join("");
+}
+function matchTeam(m){
+  if(teamFilter==="all")return true;
+  return m.t.some(t=>t[0]===teamFilter);
+}
+function sectionHTML(r,idx,extraCls=""){
+  const ms=r.matches.filter(m=>matchCity(m)&&matchTeam(m)&&!stars[m.id]);
+  if(!ms.length)return "";
+  return `<section class="round ${extraCls}"><div class="round-head"><span class="n">${idx}</span><h2>${r.title}</h2><span class="face">Face ${r.face}</span><span class="when">${r.when}</span></div><div class="grid ${r.cls}">${ms.map(m=>card(m,r.face)).join("")}</div></section>`;
+}
+
+const RDSHORT={grp:"GRP",rem:"GRP",r32:"R32",r16:"R16",qf:"QF",sf:"SF"};
+function favPath(code){
+  const secs=[REMAINING].concat(ROUNDS);
+  let g=[];
+  secs.forEach(r=>r.matches.forEach(m=>{if(m.t.some(t=>t[0]===code))g.push({m,rid:r.id});}));
+  [FINAL.final,FINAL.bronze].forEach(m=>{if(m&&m.t.some(t=>t[0]===code))g.push({m,rid:"fin"});});
+  return g;
+}
+function followingHTML(){
+  const favs=teamFilter==="all"?favTeams:favTeams.filter(c=>c===teamFilter);
+  if(!favs.length)return "";
+  const blocks=favs.map(code=>{
+    const games=favPath(code).filter(g=>matchCity(g.m));
+    const inner=games.length?games.map(g=>{
+      const m=g.m,p=PROB[m.id];
+      const pct=m.group?"✓":(p?((p.a===code?p.pa:p.pb)+"%"):"—");
+      const rd=g.rid==="fin"?"FINAL":(RDSHORT[g.rid]||"");
+      const ven=esc((m.v||"").split(" · ")[0]);
+      return `<div class="fav-chip"><span class="fc-rd">${rd}</span><span class="fc-v">${ven}</span><span class="fc-p">${pct}</span></div>`;
+    }).join('<span class="fc-arrow">→</span>'):'<span class="fav-empty">no games in this filter</span>';
+    return `<div class="fav-team"><div class="fav-name">${F[code]||""} ${N[code]||code}</div><div class="fav-track">${inner}</div></div>`;
+  }).join("");
+  return `<section class="round fav-sec"><div class="round-head"><span class="n">♥</span><h2>Following</h2><span class="when">Projected path · % = chance to fill that slot</span></div>${blocks}</section>`;
+}
+function syncTeamSel(){const t=document.getElementById("teamSel");if(t)t.value=teamFilter;}
+function setTeamFilter(c){teamFilter=(teamFilter===c)?"all":c;syncTeamSel();renderFavBar();render();}
+function renderFavBar(){
+  const chips=document.getElementById("favChips");
+  if(!chips)return;
+  chips.innerHTML=favTeams.length?favTeams.map(c=>`<span class="fav-pill${teamFilter===c?" filtering":""}"><button class="fav-go" data-c="${c}" title="Show only ${N[c]||c}'s matches">${F[c]||""} ${N[c]||c}</button><button class="fav-x" data-c="${c}" aria-label="Remove">×</button></span>`).join(""):'<span class="fav-empty">none yet — add one →</span>';
+  chips.querySelectorAll(".fav-go").forEach(b=>b.addEventListener("click",()=>setTeamFilter(b.dataset.c)));
+  chips.querySelectorAll(".fav-x").forEach(b=>b.addEventListener("click",()=>{favTeams=favTeams.filter(x=>x!==b.dataset.c);save();renderFavBar();render();}));
+  const sel=document.getElementById("favAdd");
+  const opts=Object.keys(N).filter(c=>!favTeams.includes(c)).sort((a,b)=>N[a].localeCompare(N[b]));
+  sel.innerHTML='<option value="">+ Add team…</option>'+opts.map(c=>`<option value="${c}">${N[c]}</option>`).join("");
+  const tsel=document.getElementById("teamSel");
+  if(tsel){const all=Object.keys(N).sort((a,b)=>N[a].localeCompare(N[b]));tsel.innerHTML='<option value="all">All teams</option>'+all.map(c=>`<option value="${c}"${teamFilter===c?" selected":""}>${N[c]}</option>`).join("");}
+}
+function render(){
+  DEALS=computeDeals();
+  let html="";
+  html+=followingHTML();
+  // Starred games pinned to the top, pulled out of their normal rounds.
+  const allSecs=[REMAINING].concat(ROUNDS);
+  let starItems=[];
+  allSecs.forEach(r=>r.matches.forEach(m=>{if(stars[m.id]&&matchCity(m)&&matchTeam(m))starItems.push({m,face:r.face});}));
+  [FINAL.final,FINAL.bronze].forEach(m=>{if(m&&stars[m.id]&&matchCity(m)&&matchTeam(m))starItems.push({m,face:""});});
+  if(starItems.length){
+    const inner=starItems.map(it=>card(it.m,it.face)).join("");
+    html+=`<section class="round starred-sec"><div class="round-head"><span class="n">★</span><h2>Starred</h2><span class="when">Your picks</span></div><div class="grid">${inner}</div></section>`;
+  }
+  const remHTML=sectionHTML(REMAINING,"GS","");
+  if(remHTML){
+    html+=`<div class="srcbanner rotabanner" style="margin-top:clamp(34px,5vw,56px)"><span class="tag">HEADS-UP</span><span>In the <b>final group games</b>, teams that have already qualified often <b>rest or rotate their stars</b> — to avoid injuries and yellow-card suspensions before the knockouts. That can mean fewer marquee names on the pitch and <b>softer resale demand</b>. Win-or-go-home finales and <b>all knockout games</b> get first-choice lineups.</span></div>`+remHTML;
+  }
+  ROUNDS.forEach((r,i)=>{html+=sectionHTML(r,"0"+(i+1));});
+  const finalCards=[FINAL.final,FINAL.bronze].filter(m=>matchCity(m)&&matchTeam(m)&&!stars[m.id]);
+  if(finalCards.length){
+    const inner=finalCards.map(m=>card(m,"",m.id===104?'final':'bronze')).join("");
+    html+=`<section class="round"><div class="round-head"><span class="n">05</span><h2>Final &amp; Third Place</h2><span class="when">Jul 18 – Jul 19</span></div><div class="final-wrap">${inner}</div></section>`;
+  }
+  if(!html)html='<p style="max-width:1240px;margin:36px auto;color:var(--chalk-dim);font-family:monospace;text-align:center">No games in this view.</p>';
+  document.getElementById("rounds").innerHTML=html;
+  document.querySelectorAll('.cat').forEach(b=>b.addEventListener('click',onCat));
+  document.querySelectorAll('.price input').forEach(i=>i.addEventListener('input',onCustom));
+  document.querySelectorAll('.star').forEach(b=>b.addEventListener('click',onStar));
+  document.querySelectorAll('.tclick').forEach(el=>el.addEventListener('click',()=>setTeamFilter(el.dataset.team)));
+  updateBudget();
+}
+function onStar(e){
+  const id=e.currentTarget.dataset.id;
+  if(stars[id])delete stars[id];else stars[id]=true;
+  render();save();
+}
+function onCat(e){
+  const b=e.currentTarget,id=b.dataset.id,cat=b.dataset.cat,amt=parseFloat(b.dataset.amt);
+  if(picks[id]===cat){delete prices[id];delete picks[id];}      // toggle off
+  else{prices[id]=amt;picks[id]=cat;}
+  render();save();
+}
+function onCustom(e){
+  const id=e.target.dataset.id,v=e.target.value.trim();
+  if(v===""||isNaN(parseFloat(v))){if(picks[id]==="custom"){delete prices[id];delete picks[id];}}
+  else{prices[id]=parseFloat(v);picks[id]="custom";}
+  // light update without full re-render to keep focus
+  document.querySelectorAll(`.cat[data-id="${id}"]`).forEach(c=>c.classList.remove('sel'));
+  e.target.classList.toggle('set',v!=="");
+  updateBudget();save();
+}
+function updateBudget(){
+  const vals=Object.values(prices).filter(v=>!isNaN(v));
+  const total=vals.reduce((a,b)=>a+b,0);
+  document.getElementById("b-total").textContent=fmt(total);
+  document.getElementById("b-fee").textContent=fmt(total*1.15);
+  document.getElementById("b-count").textContent=vals.length;
+}
+document.getElementById("b-clear").addEventListener("click",()=>{
+  if(!confirm("Clear all tracked prices, selections and stars?"))return;
+  prices={};picks={};stars={};save();render();
+});
+function esc(s){return String(s==null?"":s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));}
+function renderLive(d){
+  const body=document.getElementById("liveBody");
+  let h=`<div class="live-asof">As of ${esc(d.asof||new Date().toLocaleString())}</div>`;
+  if(Array.isArray(d.scores)&&d.scores.length){
+    h+='<div class="live-scores">'+d.scores.map(s=>`<span class="live-score">${esc(s.m)}<span class="st">${esc(s.st||"")}</span></span>`).join("")+"</div>";
+  }
+  if(Array.isArray(d.groupC)&&d.groupC.length){
+    h+='<table class="live-gc"><tr><th>Group C</th><th>Pts</th><th>GD</th></tr>'+d.groupC.map(r=>`<tr><td>${esc(r.t)}</td><td>${esc(r.p)}</td><td>${esc(r.gd)}</td></tr>`).join("")+"</table>";
+  }
+  if(d.note)h+=`<div class="live-note">${esc(d.note)}</div>`;
+  body.innerHTML=h||'<span class="live-err">No data parsed — try again.</span>';
+}
+async function refreshScores(){
+  const btn=document.getElementById("refreshBtn"),body=document.getElementById("liveBody"),orig=btn.textContent;
+  btn.disabled=true;btn.textContent="↻ Refreshing…";
+  body.innerHTML='<span class="live-empty">Searching for the latest scores & prices…</span>';
+  try{
+    // Build a small list of matches to price: those already tracked for get-in + any starred.
+    const flat={};[REMAINING].concat(ROUNDS).forEach(r=>r.matches.forEach(m=>flat[m.id]=m));[FINAL.final,FINAL.bronze].forEach(m=>{if(m)flat[m.id]=m;});
+    const wantIds=[...new Set([...Object.keys(getinHist),...Object.keys(stars)])].filter(id=>flat[id]);
+    const wantList=wantIds.map(id=>{const m=flat[id];const t=m.t.map(x=>N[x[0]]||x[0]).join(" vs ");const city=(m.v||"").split(" · ")[0];return `id ${id}: ${t} (${city})`;}).join("; ")||"none";
+    const today=new Date().toISOString().slice(0,10);
+    const prompt=`Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"groupC":[{"t":"team","p":4,"gd":"+3"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":282}],"note":"one sentence on whether Brazil is on track to win Group C and reach the Houston R32 game"}. In "results", list every COMPLETED group-stage match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm — this drives the clinched/alive/dead-rubber stakes signal. In "getin", give the current cheapest all-in resale price (get-in, a whole-dollar number) for ONLY these matches by id: ${wantList}. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1800,messages:[{role:"user",content:prompt}],tools:[{type:"web_search_20250305",name:"web_search"}]})
+    });
+    const data=await res.json();
+    const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    let parsed=null;try{parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());}catch(e){}
+    if(parsed){
+      renderLive(parsed);
+      let dirty=false;
+      if(Array.isArray(parsed.results)){
+        parsed.results.forEach(r=>{
+          if(!r.h||!r.a)return;
+          const k=[r.h,r.a].sort().join("-");
+          liveResults[k]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT"};dirty=true;
+        });
+      }
+      if(Array.isArray(parsed.standings)){
+        parsed.standings.forEach(s=>{if(s&&s.code){STANDINGS[s.code]={grp:s.grp||GROUP_OF[s.code]||"",pts:+s.pts||0,pl:+s.pl||0};dirty=true;}});
+      }
+      if(Array.isArray(parsed.getin)){
+        parsed.getin.forEach(g=>{
+          if(!g||g.id==null||g.p==null)return;
+          const id=String(g.id),h=(getinHist[id]||[]).filter(x=>x.d!==today);
+          h.push({d:today,p:Math.round(+g.p)});getinHist[id]=h;dirty=true;
+        });
+      }
+      if(dirty){save();render();}
+    }
+    else body.innerHTML=`<div class="live-asof">Pulled ${esc(new Date().toLocaleString())}</div>`+(txt?`<div style="font-size:13px;line-height:1.5">${esc(txt)}</div>`:'<span class="live-err">No data returned — try again.</span>');
+  }catch(e){
+    body.innerHTML='<span class="live-err">Live refresh needs to run inside Claude.ai. In your downloaded file, just ask Claude to refresh the scores and they\'ll be baked back in.</span>';
+  }finally{btn.disabled=false;btn.textContent=orig;}
+}
+
+document.getElementById("foot").innerHTML=
+  "Generated Jun 2026 · Market prices shown are average all-in resale figures (mostly Vivid Seats); FIFA-resale floor prices were removed as unreliable. The FIFA Cat chips are face values you pulled for budgeting. Knockout venues per FIFA's official bracket (M73–104); group venue/date per FIFA fixtures. "+
+  "Face ranges are official FIFA Cat 4–Cat 1 figures; live marketplace prices are dynamic and often higher. "+
+  "Tracked group games seeded from your FIFA prices: M43 Arg–Aut ($2,400/$2,300), M45 Eng–Gha ($1,600/$1,100), M49 Bra–Sco ($2,500/$2,300). Plus knockout M76 Houston ($2,000/$1,800), M89 R16 Philadelphia ($2,700/$2,200), M95 R16 Atlanta ($2,800/$2,200), M99 QF Miami ($3,700/$3,300), M97 QF Boston ($2,700/$1,300), M100 QF Kansas City ($3,600/$2,900), M102 SF Atlanta ($3,400/$2,900). Cat 2 pre-selected on each — tap to change. "+
+  "The +15% is FIFA's resale buyer fee. Add more games by extending the CATS and REMAINING objects up top. "+
+  "NEW · get-in line shows the cheapest listed ticket per match plus its week-over-week move (▼ green = softening, ▲ coral = heating up) — seeded on a few favorites; hit Refresh inside Claude.ai to pull live numbers. "+
+  "NEW · the ⚑ stakes chip on group games is computed (clinched / alive / dead rubber) from the verified clinched set, and switches to live standings once Refresh populates them — it also drives the ⏱ buy-timing badge.";
+(async()=>{await load();render();renderFavBar();document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
+</script>
+</body>
+</html>
