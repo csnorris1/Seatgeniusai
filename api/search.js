@@ -8,7 +8,8 @@ exports.handler = async (event) => {
     statusCode,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -334,6 +335,92 @@ exports.handler = async (event) => {
         checked_at: new Date().toISOString(),
         has_price_stats: withPriceStats.length > 0,
       });
+    }
+
+    // AI deal analysis — keeps the Anthropic key server-side (was previously
+    // called directly from the browser, exposing the key). Frontend POSTs the
+    // game data; we build the prompt and call Claude here.
+    if (action === 'analyze') {
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (!ANTHROPIC_API_KEY) {
+        return respond(500, { error: 'AI analysis is not configured.' });
+      }
+
+      let raw = event.body || '';
+      if (event.isBase64Encoded && raw) {
+        raw = Buffer.from(raw, 'base64').toString('utf8');
+      }
+      let d;
+      try {
+        d = raw ? JSON.parse(raw) : {};
+      } catch {
+        return respond(400, { error: 'Invalid request body.' });
+      }
+
+      const cap = typeof d.venueCapacity === 'number'
+        ? ` (capacity: ${d.venueCapacity.toLocaleString('en-US')})`
+        : '';
+      const pop = typeof d.popularity === 'number' ? d.popularity.toFixed(2) : 'N/A';
+      const altSitesText = d.altSitesText || 'none available';
+
+      const prompt = `You are an expert MLB ticket deal analyst. Analyze this game and give a plain-English buying verdict.
+
+**Game:** ${d.title || 'Unknown'}
+**Date:** ${d.date || 'Unknown'} (${d.gameDay || 'Unknown'})
+**Venue:** ${d.venue || 'Unknown'} in ${d.city || ''}, ${d.state || ''}${cap}
+**Home team:** ${d.homeTeam || 'Unknown'} | **Away team:** ${d.awayTeam || 'Unknown'}
+**Demand level:** ${d.demandLevel || 'unknown'} (SeatGeek popularity score: ${pop})
+
+**Current SeatGeek price tiers:**
+${d.listingText || 'No price data available yet.'}
+
+**Also listed on:** ${altSitesText}
+
+Before answering, use the web_search tool (max 2-3 searches) to gather live context that affects ticket demand: notable player injuries or returns, recent team form/streaks, weather forecast for game day, rivalry or storyline context, and starting-pitcher news. Search for the most current information available. If a fact isn't available, skip it — do not speculate.
+
+Then provide:
+
+1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, venue size, and the live context you found. Weave one specific fact from your web search into this verdict (e.g. "Judge on a 5-game HR streak", "rain forecast Saturday", "Skenes starting").
+
+2. **Best value pick** — which tier and why, considering the demand level.
+
+3. **Price check suggestion** — tell the user which other sites to compare prices on (mention ${altSitesText} by name). Be specific: "This game is also on StubHub and Vivid Seats — compare before buying."
+
+4. **Final verdict** — 1-2 punchy sentences. Be direct and opinionated. Should they buy now or wait?
+
+Keep it concise and conversational. Bold the key insights.`;
+
+      try {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1500,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        const aiData = await aiRes.json();
+        const finalText = Array.isArray(aiData.content)
+          ? aiData.content
+              .filter((b) => b.type === 'text')
+              .map((b) => b.text)
+              .filter(Boolean)
+              .join('\n\n')
+              .trim()
+          : '';
+        if (!finalText) {
+          return respond(502, { error: aiData.error?.message || 'No analysis returned.' });
+        }
+        return respond(200, { analysis: finalText });
+      } catch (e) {
+        return respond(502, { error: 'AI analysis request failed.' });
+      }
     }
 
     return respond(400, { error: 'Invalid action' });

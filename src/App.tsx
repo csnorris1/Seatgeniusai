@@ -295,69 +295,31 @@ export default function SeatGenius() {
     const altSitesText = altSites.length ? altSites.join(", ") : "none available";
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch(`${AWS_URL}/search?action=analyze`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY || "",
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1500,
-          tools: [
-            {
-              type: "web_search_20250305",
-              name: "web_search",
-              max_uses: 3,
-            },
-          ],
-          messages: [
-            {
-              role: "user",
-              content: `You are an expert MLB ticket deal analyst. Analyze this game and give a plain-English buying verdict.
-
-**Game:** ${selectedEvent.title}
-**Date:** ${formatDate(selectedEvent.datetime_local)} (${gameDay})
-**Venue:** ${selectedEvent.venue} in ${selectedEvent.city}, ${selectedEvent.state}${selectedEvent.venue_capacity ? ` (capacity: ${selectedEvent.venue_capacity.toLocaleString()})` : ""}
-**Home team:** ${selectedEvent.home_team || "Unknown"} | **Away team:** ${selectedEvent.away_team || "Unknown"}
-**Demand level:** ${demandLevel} (SeatGeek popularity score: ${selectedEvent.popularity ? selectedEvent.popularity.toFixed(2) : "N/A"})
-
-**Current SeatGeek price tiers:**
-${listingText || "No price data available yet."}
-
-**Also listed on:** ${altSitesText}
-
-Before answering, use the web_search tool (max 2-3 searches) to gather live context that affects ticket demand: notable player injuries or returns, recent team form/streaks, weather forecast for game day, rivalry or storyline context, and starting-pitcher news. Search for the most current information available. If a fact isn't available, skip it — do not speculate.
-
-Then provide:
-
-1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, venue size, and the live context you found. Weave one specific fact from your web search into this verdict (e.g. "Judge on a 5-game HR streak", "rain forecast Saturday", "Skenes starting").
-
-2. **Best value pick** — which tier and why, considering the demand level.
-
-3. **Price check suggestion** — tell the user which other sites to compare prices on (mention ${altSitesText} by name). Be specific: "This game is also on StubHub and Vivid Seats — compare before buying."
-
-4. **Final verdict** — 1-2 punchy sentences. Be direct and opinionated. Should they buy now or wait?
-
-Keep it concise and conversational. Bold the key insights.`,
-            },
-          ],
+          title: selectedEvent.title,
+          date: formatDate(selectedEvent.datetime_local),
+          gameDay,
+          venue: selectedEvent.venue,
+          city: selectedEvent.city,
+          state: selectedEvent.state,
+          venueCapacity: selectedEvent.venue_capacity ?? null,
+          homeTeam: selectedEvent.home_team || "Unknown",
+          awayTeam: selectedEvent.away_team || "Unknown",
+          demandLevel,
+          popularity: selectedEvent.popularity ?? null,
+          listingText,
+          altSitesText,
         }),
       });
       const data = await res.json();
-      const textBlocks = Array.isArray(data.content)
-        ? data.content
-            .filter((b: { type: string }) => b.type === "text")
-            .map((b: { text: string }) => b.text)
-            .filter(Boolean)
-        : [];
-      const finalText = textBlocks.join("\n\n").trim();
+      const finalText = (data.analysis || "").trim();
       if (finalText) setResult(finalText);
       else
         setError(
-          `Couldn't get analysis: ${data.error?.message || JSON.stringify(data.error) || "Unknown error"}`,
+          `Couldn't get analysis: ${data.error?.message || data.error || "Unknown error"}`,
         );
     } catch (err) {
       console.error("AI analysis fetch error:", err);
