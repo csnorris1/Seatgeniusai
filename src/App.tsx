@@ -366,7 +366,7 @@ export default function SeatGenius() {
           </div>
           <div className="flex items-center gap-3">
             <a
-              href="/world-cup"
+              href="world-cup/"
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
             >
               <Trophy className="h-4 w-4" />
