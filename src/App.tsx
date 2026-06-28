@@ -10,6 +10,7 @@ import {
   MapPin,
   Sparkles,
   TrendingUp,
+  Trophy,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -363,13 +364,22 @@ export default function SeatGenius() {
               Find the best deal on Cubs tickets at Wrigley Field.
             </p>
           </div>
-          <Badge
-            variant="outline"
-            className="hidden sm:inline-flex border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-          >
-            <Sparkles className="h-3 w-3" />
-            Powered by AI
-          </Badge>
+          <div className="flex items-center gap-3">
+            <a
+              href="/world-cup"
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+            >
+              <Trophy className="h-4 w-4" />
+              World Cup 2026
+            </a>
+            <Badge
+              variant="outline"
+              className="hidden sm:inline-flex border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            >
+              <Sparkles className="h-3 w-3" />
+              Powered by AI
+            </Badge>
+          </div>
         </div>
       </header>
 
