@@ -417,6 +417,52 @@ Keep it concise and conversational. Bold the key insights.`;
       }
     }
 
+    // World Cup live refresh — same server-side pattern as `analyze`, so the
+    // Anthropic key stays off the static GitHub Pages page. The page sends only
+    // `wantList` (the matches it wants get-in prices for); we build the prompt
+    // and run the web search here, then return the model's JSON text to parse.
+    if (action === 'wc_refresh') {
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (!ANTHROPIC_API_KEY) {
+        return respond(500, { error: 'Live refresh is not configured.' });
+      }
+
+      const wantList = params.wantList || 'none';
+      const prompt = `Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"groupC":[{"t":"team","p":4,"gd":"+3"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one sentence on whether Brazil is on track to win Group C and reach the Houston R32 game"}. In "results", list every COMPLETED group-stage match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars, and its approximate percent change over the last 7 days as "chg" (a number, negative if the price dropped), using resale price trackers — for knockout slots the teams may still be undecided, price the match-number slot anyway. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+
+      try {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1800,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        const aiData = await aiRes.json();
+        const text = Array.isArray(aiData.content)
+          ? aiData.content
+              .filter((b) => b.type === 'text')
+              .map((b) => b.text)
+              .filter(Boolean)
+              .join('\n')
+              .trim()
+          : '';
+        if (!text) {
+          return respond(502, { error: aiData.error?.message || 'No data returned.' });
+        }
+        return respond(200, { text });
+      } catch (e) {
+        return respond(502, { error: 'Live refresh request failed.' });
+      }
+    }
+
     return respond(400, { error: 'Invalid action' });
 
   } catch (err) {
