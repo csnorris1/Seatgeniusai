@@ -37,6 +37,8 @@ jobs:
             --function-name seatgenius-search \
             --handler search.handler \
             --runtime nodejs22.x \
+            --timeout 29 \
+            --memory-size 256 \
             --region us-east-2
 
       - name: Verify deployment
