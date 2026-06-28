@@ -440,8 +440,10 @@ Keep it concise and conversational. Bold the key insights.`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 1800,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+            max_tokens: 1500,
+            // Keep searches low so the round-trip fits under API Gateway's ~29s
+            // timeout (this endpoint is synchronous behind the Gateway).
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });
