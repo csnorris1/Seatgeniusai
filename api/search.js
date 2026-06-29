@@ -526,6 +526,84 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, { text: JSON.stringify(out) });
     }
 
+    // Daily price snapshot. Invoked by an EventBridge schedule (not the public
+    // UI) once a day. Pulls current SeatGeek price stats for upcoming MLB games
+    // and writes one dated reading per game to DynamoDB, so average/lowest-price
+    // history builds automatically — no user visit required. The composite key
+    // (event_id + date) makes a same-day re-run idempotent: it overwrites that
+    // day's reading rather than duplicating it.
+    if (action === 'log_prices') {
+      // Optional shared-secret guard so the public API Gateway URL can't be used
+      // to trigger the write job. Enforced only once LOG_TOKEN is set on the
+      // Lambda (lets the action ship and be tested before the secret exists).
+      const LOG_TOKEN = process.env.LOG_TOKEN;
+      if (LOG_TOKEN && params.token !== LOG_TOKEN) {
+        return respond(403, { error: 'Forbidden' });
+      }
+
+      const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+      const { marshall } = require('@aws-sdk/util-dynamodb');
+      const ddb = new DynamoDBClient({});
+      const TABLE = process.env.PRICE_HISTORY_TABLE || 'seatgenius-price-history';
+
+      const today = new Date().toISOString().split('T')[0];
+      const horizon = new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0];
+
+      // Collect upcoming MLB games over the next ~30 days, nearest first, capped
+      // at a few pages so one run stays well inside the Lambda timeout.
+      const collected = [];
+      const PER_PAGE = 100, MAX_PAGES = 5;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const res = await fetch(
+          `https://api.seatgeek.com/2/events?type=mlb&per_page=${PER_PAGE}&page=${page}` +
+          `&sort=datetime_local.asc&datetime_utc.gte=${today}&datetime_utc.lte=${horizon}` +
+          `&client_id=${SEATGEEK_CLIENT_ID}`
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        const evs = data.events || [];
+        collected.push(...evs);
+        if (evs.length < PER_PAGE) break; // last page reached
+      }
+
+      let written = 0, skipped = 0;
+      const captured_at = new Date().toISOString();
+      for (const e of collected) {
+        const s = e.stats || {};
+        const lowest = s.lowest_price ?? s.lowest_sg_base_price ?? null;
+        const average = s.average_price ?? null;
+        // Only log games that actually have market stats — a reading with no
+        // price isn't worth storing and would skew an average if counted.
+        if (lowest == null || average == null) { skipped++; continue; }
+
+        const item = {
+          event_id: String(e.id),
+          date: today,
+          lowest_price: lowest,
+          average_price: average,
+          captured_at,
+        };
+        if (s.highest_price != null) item.highest_price = s.highest_price;
+        if (s.median_price != null) item.median_price = s.median_price;
+        if (s.listing_count != null) item.listing_count = s.listing_count;
+        if (e.short_title || e.title) item.title = e.short_title || e.title;
+        if (e.datetime_local) item.datetime_local = e.datetime_local;
+
+        try {
+          await ddb.send(new PutItemCommand({
+            TableName: TABLE,
+            Item: marshall(item, { removeUndefinedValues: true }),
+          }));
+          written++;
+        } catch {
+          // One bad write shouldn't abort the whole run.
+          skipped++;
+        }
+      }
+
+      return respond(200, { logged: written, skipped, scanned: collected.length, date: today });
+    }
+
     return respond(400, { error: 'Invalid action' });
 
   } catch (err) {
