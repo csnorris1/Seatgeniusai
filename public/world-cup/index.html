@@ -924,8 +924,19 @@ async function refreshScores(){
     // Priority: your tracked/starred matches, then the featured ones, then fill
     // with the knockout bracket (ids 73+). Capped so the lookup stays reliable.
     const koIds=Object.keys(flat).filter(id=>+id>=73).sort((a,b)=>a-b);
-    const wantIds=[...new Set([...Object.keys(prices),...Object.keys(picks),...Object.keys(stars),...Object.keys(getinHist),...Object.keys(MARKET),...koIds])].filter(id=>flat[id]).slice(0,14);
-    const wantList=wantIds.map(id=>{const m=flat[id];const t=m.t.map(x=>N[x[0]]||x[0]).join(" vs ");const city=(m.v||"").split(" · ")[0];return `id ${id}: ${t} (${city})`;}).join("; ")||"none";
+    // Set-but-not-yet-played knockout matches are the live round (e.g. R32 now)
+    // and the most useful to price — put them first so they aren't sliced off.
+    const setUpcoming=Object.keys(liveKO).filter(id=>liveKO[id]&&liveKO[id].hs==null&&flat[id]);
+    const wantIds=[...new Set([...setUpcoming,...Object.keys(prices),...Object.keys(picks),...Object.keys(stars),...Object.keys(MARKET),...koIds])].filter(id=>flat[id]).slice(0,14);
+    const wantList=wantIds.map(id=>{
+      const m=flat[id],kr=liveKO[id];
+      // Use the REAL teams for a set knockout matchup — once a round is decided
+      // the projected m.t teams are wrong, which breaks the price search.
+      const codes=(!m.group&&kr&&kr.h&&kr.a)?[kr.h,kr.a]:m.t.map(x=>x[0]);
+      const t=codes.map(c=>N[c]||c).join(" vs ");
+      const city=(m.v||"").split(" · ")[0];
+      return `id ${id}: ${t} (${city})`;
+    }).join("; ")||"none";
     const today=new Date().toISOString().slice(0,10);
     // Live data comes from our AWS Lambda (action=wc_refresh), which holds the
     // Anthropic key server-side and builds the prompt. We just send the list of
