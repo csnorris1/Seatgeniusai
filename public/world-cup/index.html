@@ -894,8 +894,8 @@ async function refreshScores(){
     const today=new Date().toISOString().slice(0,10);
     // Live data comes from our AWS Lambda (action=wc_refresh), which holds the
     // Anthropic key server-side and builds the prompt. We just send the list of
-    // matches we want priced. Was previously a direct browser call to the
-    // Anthropic API, which only worked inside the Claude.ai artifact sandbox.
+    // matches we want priced. The Lambda keeps its work small so the round-trip
+    // fits under API Gateway's ~29s synchronous timeout.
     const res=await fetch(`https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=wc_refresh&wantList=${encodeURIComponent(wantList)}`);
     const data=await res.json();
     const txt=data.text||"";

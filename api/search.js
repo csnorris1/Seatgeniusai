@@ -15,7 +15,12 @@ exports.handler = async (event) => {
     body: JSON.stringify(body),
   });
 
-  if (event.httpMethod === 'OPTIONS') {
+  // API Gateway (v1) exposes event.httpMethod; Lambda Function URLs (v2) use
+  // event.requestContext.http.method. Support both so the same handler works
+  // behind the Gateway and behind the Function URL (used for the slow,
+  // web-search-backed wc_refresh, which can exceed the Gateway's 29s cap).
+  const httpMethod = event.requestContext?.http?.method || event.httpMethod;
+  if (httpMethod === 'OPTIONS') {
     return respond(200, {});
   }
 
@@ -428,7 +433,10 @@ Keep it concise and conversational. Bold the key insights.`;
       }
 
       const wantList = params.wantList || 'none';
-      const prompt = `Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"groupC":[{"t":"team","p":4,"gd":"+3"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one sentence on whether Brazil is on track to win Group C and reach the Houston R32 game"}. In "results", list every COMPLETED group-stage match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars, and its approximate percent change over the last 7 days as "chg" (a number, negative if the price dropped), using resale price trackers — for knockout slots the teams may still be undecided, price the match-number slot anyway. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+      // Kept deliberately lean (get-in prices + a few scores, no full
+      // results/standings) so the web search + synthesis finishes inside API
+      // Gateway's ~29s synchronous cap. The page tolerates missing fields.
+      const prompt = `Search the web for the latest 2026 FIFA World Cup resale ticket get-in prices and recent scores. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","getin":[{"id":76,"p":1450,"chg":-3}],"scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"note":"one short sentence on notable price movement or an upcoming marquee match"}. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if the price dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Include up to 6 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
 
       try {
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -440,10 +448,10 @@ Keep it concise and conversational. Bold the key insights.`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 1500,
+            max_tokens: 1000,
             // Keep searches low so the round-trip fits under API Gateway's ~29s
             // timeout (this endpoint is synchronous behind the Gateway).
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });
@@ -459,7 +467,11 @@ Keep it concise and conversational. Bold the key insights.`;
         if (!text) {
           return respond(502, { error: aiData.error?.message || 'No data returned.' });
         }
-        return respond(200, { text });
+        // The model sometimes wraps the JSON in prose/markdown despite the
+        // "ONLY a JSON object" instruction. Hand the page just the JSON object
+        // (first `{` to last `}`) so its JSON.parse succeeds.
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        return respond(200, { text: jsonMatch ? jsonMatch[0] : text });
       } catch (e) {
         return respond(502, { error: 'Live refresh request failed.' });
       }
