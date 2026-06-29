@@ -422,59 +422,90 @@ Keep it concise and conversational. Bold the key insights.`;
       }
     }
 
-    // World Cup live refresh — same server-side pattern as `analyze`, so the
-    // Anthropic key stays off the static GitHub Pages page. The page sends only
-    // `wantList` (the matches it wants get-in prices for); we build the prompt
-    // and run the web search here, then return the model's JSON text to parse.
+    // World Cup live refresh. Results + standings come from openfootball's
+    // public-domain 2026 JSON (no API key, complete, accurate) so the bracket
+    // reflects every real group result. The Anthropic key is used only for what
+    // it's good at: resale get-in prices. The page sends `wantList` (the matches
+    // it wants priced). Served via the Lambda Function URL (no 29s cap).
     if (action === 'wc_refresh') {
-      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-      if (!ANTHROPIC_API_KEY) {
-        return respond(500, { error: 'Live refresh is not configured.' });
-      }
-
       const wantList = params.wantList || 'none';
-      // Full refresh — results + standings update the bracket, getin updates
-      // the price line. Served via the Lambda Function URL (not API Gateway),
-      // so it isn't bound by the Gateway's 29s cap (Lambda timeout is 60s).
-      const prompt = `Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one sentence on a notable storyline or price movement"}. In "results", list up to 24 of the MOST RECENT completed GROUP-STAGE matches you can confirm, using 3-letter FIFA codes with final scores and st:"FT" (keep it bounded so the JSON stays complete). Group results drive the bracket; knockout results are not needed here. In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm — this drives the clinched/alive/dead-rubber stakes signal. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if the price dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+      const grpOf = (g) => (typeof g === 'string' && g.startsWith('Group ')) ? g.slice(6) : null;
 
+      // openfootball uses full team names; the page uses 3-letter codes.
+      const NAME2CODE = {
+        'Mexico': 'MEX', 'South Korea': 'KOR', 'Switzerland': 'SUI', 'Canada': 'CAN', 'Brazil': 'BRA',
+        'Morocco': 'MAR', 'Japan': 'JPN', 'USA': 'USA', 'Paraguay': 'PAR', 'Germany': 'GER', 'Ecuador': 'ECU',
+        'Netherlands': 'NED', 'Belgium': 'BEL', 'Egypt': 'EGY', 'Spain': 'ESP', 'Uruguay': 'URU', 'France': 'FRA',
+        'Norway': 'NOR', 'Argentina': 'ARG', 'Austria': 'AUT', 'Portugal': 'POR', 'Colombia': 'COL', 'England': 'ENG',
+        'Croatia': 'CRO', 'Czech Republic': 'CZE', 'Australia': 'AUS', 'Scotland': 'SCO', 'Ivory Coast': 'CIV',
+        'Sweden': 'SWE', 'Cape Verde': 'CPV', 'Senegal': 'SEN', 'Ghana': 'GHA', 'South Africa': 'RSA', 'Qatar': 'QAT',
+        'Bosnia & Herzegovina': 'BIH', 'Haiti': 'HTI', 'Turkey': 'TUR', 'Curaçao': 'CUW', 'Iran': 'IRN',
+        'New Zealand': 'NZL', 'Saudi Arabia': 'KSA', 'Iraq': 'IRQ', 'Jordan': 'JOR', 'Algeria': 'DZA',
+        'Uzbekistan': 'UZB', 'DR Congo': 'COD', 'Panama': 'PAN', 'Tunisia': 'TUN',
+      };
+
+      // 1) Bracket data from openfootball (no key needed).
+      let results = [], standings = [], scores = [];
       try {
-        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 3500,
-            // Served via the Function URL (60s Lambda timeout), so we can afford
-            // more searches than the API Gateway's 29s cap would allow.
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        });
-        const aiData = await aiRes.json();
-        const text = Array.isArray(aiData.content)
-          ? aiData.content
-              .filter((b) => b.type === 'text')
-              .map((b) => b.text)
-              .filter(Boolean)
-              .join('\n')
-              .trim()
-          : '';
-        if (!text) {
-          return respond(502, { error: aiData.error?.message || 'No data returned.' });
+        const ofRes = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+        const of = await ofRes.json();
+        const stand = {}; // code -> { grp, pts, pl }
+        const bump = (code, grp, gf, ga) => {
+          const s = stand[code] || (stand[code] = { grp, pts: 0, pl: 0 });
+          s.pl++;
+          if (gf > ga) s.pts += 3; else if (gf === ga) s.pts += 1;
+        };
+        const played = [];
+        for (const m of (of.matches || [])) {
+          const grp = grpOf(m.group);
+          const h = NAME2CODE[m.team1], a = NAME2CODE[m.team2];
+          const ft = m.score && m.score.ft;
+          if (!grp || !h || !a || !Array.isArray(ft) || ft.length < 2) continue;
+          const hs = ft[0], as = ft[1];
+          results.push({ h, a, hs, as, st: 'FT' });
+          bump(h, grp, hs, as);
+          bump(a, grp, as, hs);
+          played.push({ date: m.date || '', m: `${m.team1} ${hs}-${as} ${m.team2}` });
         }
-        // The model sometimes wraps the JSON in prose/markdown despite the
-        // "ONLY a JSON object" instruction. Hand the page just the JSON object
-        // (first `{` to last `}`) so its JSON.parse succeeds.
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        return respond(200, { text: jsonMatch ? jsonMatch[0] : text });
+        standings = Object.entries(stand).map(([code, s]) => ({ code, grp: s.grp, pts: s.pts, pl: s.pl }));
+        scores = played.sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 8).map((p) => ({ m: p.m, st: 'FT' }));
       } catch (e) {
-        return respond(502, { error: 'Live refresh request failed.' });
+        // openfootball unavailable — return prices only; bracket keeps its data.
       }
+
+      // 2) Resale get-in prices via Claude (the one thing openfootball can't give).
+      let getin = [], note = '';
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (ANTHROPIC_API_KEY && wantList !== 'none') {
+        const prompt = `Search the web for current 2026 FIFA World Cup resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one short sentence on notable price movement"}. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if it dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
+        try {
+          const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 1000,
+              tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+              messages: [{ role: 'user', content: prompt }],
+            }),
+          });
+          const aiData = await aiRes.json();
+          const text = Array.isArray(aiData.content)
+            ? aiData.content.filter((b) => b.type === 'text').map((b) => b.text).filter(Boolean).join('\n').trim()
+            : '';
+          const jm = text.match(/\{[\s\S]*\}/);
+          if (jm) {
+            const parsed = JSON.parse(jm[0]);
+            if (Array.isArray(parsed.getin)) getin = parsed.getin;
+            if (typeof parsed.note === 'string') note = parsed.note;
+          }
+        } catch (e) {
+          // price lookup failed — return the bracket data without prices.
+        }
+      }
+
+      const out = { asof: new Date().toISOString(), scores, results, standings, getin, note };
+      return respond(200, { text: JSON.stringify(out) });
     }
 
     return respond(400, { error: 'Invalid action' });
