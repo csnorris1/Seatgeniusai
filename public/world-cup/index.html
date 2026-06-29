@@ -894,9 +894,9 @@ async function refreshScores(){
     const today=new Date().toISOString().slice(0,10);
     // Live data comes from our AWS Lambda (action=wc_refresh), which holds the
     // Anthropic key server-side and builds the prompt. We just send the list of
-    // matches we want priced. The Lambda keeps its work small so the round-trip
-    // fits under API Gateway's ~29s synchronous timeout.
-    const res=await fetch(`https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=wc_refresh&wantList=${encodeURIComponent(wantList)}`);
+    // matches we want priced. Uses the Lambda Function URL (not API Gateway) so
+    // the full results+standings+prices refresh isn't bound by the 29s cap.
+    const res=await fetch(`https://xmtgbs44e2mrxnm2en2hegwe4q0dzzzk.lambda-url.us-east-2.on.aws/?action=wc_refresh&wantList=${encodeURIComponent(wantList)}`);
     const data=await res.json();
     const txt=data.text||"";
     let parsed=null;try{parsed=JSON.parse(txt.replace(/```json|```/g,"").trim());}catch(e){}

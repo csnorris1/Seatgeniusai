@@ -433,10 +433,10 @@ Keep it concise and conversational. Bold the key insights.`;
       }
 
       const wantList = params.wantList || 'none';
-      // Kept deliberately lean (get-in prices + a few scores, no full
-      // results/standings) so the web search + synthesis finishes inside API
-      // Gateway's ~29s synchronous cap. The page tolerates missing fields.
-      const prompt = `Search the web for the latest 2026 FIFA World Cup resale ticket get-in prices and recent scores. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","getin":[{"id":76,"p":1450,"chg":-3}],"scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"note":"one short sentence on notable price movement or an upcoming marquee match"}. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if the price dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Include up to 6 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
+      // Full refresh — results + standings update the bracket, getin updates
+      // the price line. Served via the Lambda Function URL (not API Gateway),
+      // so it isn't bound by the Gateway's 29s cap (Lambda timeout is 60s).
+      const prompt = `Search the web for the very latest 2026 FIFA World Cup results, standings, and resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"asof":"<current as-of>","scores":[{"m":"TeamA 1-0 TeamB","st":"FT or LIVE 70'"}],"results":[{"h":"MEX","a":"CZE","hs":2,"as":0,"st":"FT"}],"standings":[{"code":"BRA","grp":"C","pts":6,"pl":2}],"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one sentence on a notable storyline or price movement"}. In "results", list every COMPLETED group-stage or knockout match you can confirm, using 3-letter FIFA codes with final scores and st:"FT". In "standings", give current points (pts) and games played (pl) with the group letter (grp) for as many teams as you can confirm — this drives the clinched/alive/dead-rubber stakes signal. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price (get-in) as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if the price dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Include up to 8 recent/in-progress matches in "scores". Omit anything you can't confirm rather than guessing.`;
 
       try {
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -448,10 +448,10 @@ Keep it concise and conversational. Bold the key insights.`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 1000,
-            // Keep searches low so the round-trip fits under API Gateway's ~29s
-            // timeout (this endpoint is synchronous behind the Gateway).
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
+            max_tokens: 2000,
+            // Served via the Function URL (60s Lambda timeout), so we can afford
+            // more searches than the API Gateway's 29s cap would allow.
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });

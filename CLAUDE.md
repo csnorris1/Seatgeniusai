@@ -27,7 +27,8 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 ## API Keys & URLs
 
-- AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com
+- AWS API Gateway URL: https://vebhfm3r55.execute-api.us-east-2.amazonaws.com (most actions; ~29s synchronous cap)
+- AWS Lambda Function URL: https://xmtgbs44e2mrxnm2en2hegwe4q0dzzzk.lambda-url.us-east-2.on.aws/ — same `seatgenius-search` Lambda, but no 29s cap (Lambda timeout 90s). Used by the World Cup page's `wc_refresh` because the full results+standings+prices web search runs ~35s. Public (auth NONE); its resource policy needs **both** `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` (the second is required as of an Oct 2025 AWS change — omitting it returns 403).
 - SeatGeek Client ID: NTQ2MDU2NDB8MTc3NTMyNjI2MS45MTYwMjky (active, used for events + listings + comparison)
 - Anthropic model: claude-sonnet-4-6
 - Ticketmaster API Key: P3rAzoUuGoJ7XcIfaWkp7Dz2DLG1te1j (wired into listings/compare actions but still returning 401 Invalid ApiKey from Lambda — Ticketmaster account activation issue)
