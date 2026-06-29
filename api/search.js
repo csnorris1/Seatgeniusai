@@ -485,15 +485,15 @@ Keep it concise and conversational. Bold the key insights.`;
       let getin = [], note = '';
       const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (ANTHROPIC_API_KEY && wantList !== 'none') {
-        const prompt = `Search the web for current 2026 FIFA World Cup resale ticket get-in prices. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"getin":[{"id":76,"p":1450,"chg":-3}],"note":"one short sentence on notable price movement"}. In "getin", for ONLY these matches by id (${wantList}), give the current cheapest all-in resale price as "p" in whole dollars and its approximate 7-day percent change as "chg" (a number, negative if it dropped), using resale price trackers — for undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
+        const prompt = `Search the web for current 2026 FIFA World Cup resale ticket prices and how they are trending. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"getin":[{"id":76,"p":1450,"avg":2200,"chg":-8}],"note":"one short sentence on notable price movement"}. In "getin", for ONLY these matches by id (${wantList}): "p" = current cheapest all-in resale price (get-in) in whole dollars; "avg" = the typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change in the price (a number, negative if prices are dropping). Use resale price trackers (Vivid Seats, SeatPick, TickPick, StubHub). For undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
         try {
           const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({
               model: 'claude-sonnet-4-6',
-              max_tokens: 1000,
-              tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+              max_tokens: 1500,
+              tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
               messages: [{ role: 'user', content: prompt }],
             }),
           });
