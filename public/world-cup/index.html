@@ -914,7 +914,10 @@ async function refreshScores(){
     // (entered a price or picked a category), starred, or already have history
     // for. Capped so the price lookup stays fast and reliable.
     const flat={};[REMAINING].concat(ROUNDS).forEach(r=>r.matches.forEach(m=>flat[m.id]=m));[FINAL.final,FINAL.bronze].forEach(m=>{if(m)flat[m.id]=m;});
-    const wantIds=[...new Set([...Object.keys(MARKET),...Object.keys(prices),...Object.keys(picks),...Object.keys(stars),...Object.keys(getinHist)])].filter(id=>flat[id]).slice(0,12);
+    // Priority: your tracked/starred matches, then the featured ones, then fill
+    // with the knockout bracket (ids 73+). Capped so the lookup stays reliable.
+    const koIds=Object.keys(flat).filter(id=>+id>=73).sort((a,b)=>a-b);
+    const wantIds=[...new Set([...Object.keys(prices),...Object.keys(picks),...Object.keys(stars),...Object.keys(getinHist),...Object.keys(MARKET),...koIds])].filter(id=>flat[id]).slice(0,14);
     const wantList=wantIds.map(id=>{const m=flat[id];const t=m.t.map(x=>N[x[0]]||x[0]).join(" vs ");const city=(m.v||"").split(" · ")[0];return `id ${id}: ${t} (${city})`;}).join("; ")||"none";
     const today=new Date().toISOString().slice(0,10);
     // Live data comes from our AWS Lambda (action=wc_refresh), which holds the
