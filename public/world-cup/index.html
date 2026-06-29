@@ -589,7 +589,9 @@ function priceHead(m){
   // Prefer the live average + trend from Refresh; fall back to the seeded MARKET figure.
   const lm=liveMkt[m.id];
   if(lm&&lm.avg){
-    return `<div class="phead"><span class="ph-lbl">avg going price</span><span class="ph-amt">${fmt(lm.avg)}</span>${trendBadge(lm.chg)}<span class="ph-src">live · all-in</span></div>`;
+    const w=wowFrom(getinHist[m.id],"avg");
+    const badge=(w&&w.pct!=null)?trendBadge(w.pct):"";
+    return `<div class="phead"><span class="ph-lbl">avg going price</span><span class="ph-amt">${fmt(lm.avg)}</span>${badge}<span class="ph-src">live · all-in</span></div>`;
   }
   const mk=MARKET[m.id];
   if(mk&&mk.avg){
@@ -601,28 +603,27 @@ function priceHead(m){
 // Verified against live FIFA standings on Jun 22, 2026. Exact seeding/venue still resolves matchday 3.
 const CLINCHED=new Set(["MEX","USA","GER","FRA","NOR","ARG"]);
 
-// ── Get-in price + week-over-week % ─────────────────────────────────
-// Reads the dated history in getinHist[id], shows the latest get-in price and
-// how it has moved. Prefers a source-provided 7-day change (chg) from Refresh;
-// otherwise computes it against the stored reading ~7 days earlier. Down = good
-// for a buyer (green); up = heating up (coral).
-function getinWoW(id){
-  const h=getinHist[id]; if(!h||!h.length)return null;
-  const s=[...h].sort((a,b)=>a.d<b.d?-1:1);
+// ── Price trend (week-over-week) from our OWN saved readings ──────────
+// Each Refresh appends a dated {p, avg} reading to getinHist[id]. The trend is
+// computed from those real readings — latest vs the one closest to 7 days back.
+// We deliberately do NOT use the model's guessed weekly change (it was
+// unreliable). The % stays hidden until there are two readings on different days.
+function wowFrom(hist,field){
+  const s=(hist||[]).filter(x=>x[field]!=null).sort((a,b)=>a.d<b.d?-1:1);
+  if(!s.length)return null;
   const latest=s[s.length-1];
   const target=new Date(latest.d).getTime()-7*864e5;
   let prev=null,best=Infinity;
   for(let i=0;i<s.length-1;i++){
+    if(s[i].d===latest.d)continue;
     const diff=Math.abs(new Date(s[i].d).getTime()-target);
     if(diff<best){best=diff;prev=s[i];}
   }
   let pct=null,dir="flat";
-  if(prev&&prev.p>0){pct=Math.round((latest.p-prev.p)/prev.p*100);dir=pct<0?"down":pct>0?"up":"flat";}
-  // Prefer the source's own 7-day change when Refresh provides one (real trend on the
-  // first pull, before we've accumulated our own history).
-  if(typeof latest.chg==="number"){pct=Math.round(latest.chg);dir=pct<0?"down":pct>0?"up":"flat";}
-  return {cur:latest.p,pct,dir,asof:latest.d};
+  if(prev&&prev[field]>0){pct=Math.round((latest[field]-prev[field])/prev[field]*100);dir=pct<0?"down":pct>0?"up":"flat";}
+  return {cur:latest[field],pct,dir,asof:latest.d};
 }
+function getinWoW(id){return wowFrom(getinHist[id],"p");}
 function getinLine(id){
   const w=getinWoW(id); if(!w)return "";
   let badge="";
@@ -966,14 +967,14 @@ async function refreshScores(){
         parsed.getin.forEach(g=>{
           if(!g||g.id==null)return;
           const id=String(g.id);
-          const chg=(g.chg!=null&&!isNaN(+g.chg))?Math.round(+g.chg):undefined;
-          if(g.p!=null&&!isNaN(+g.p)){
-            const h=(getinHist[id]||[]).filter(x=>x.d!==today);
-            h.push({d:today,p:Math.round(+g.p),chg});getinHist[id]=h;dirty=true;
-          }
-          if(g.avg!=null&&!isNaN(+g.avg)){
-            liveMkt[id]={avg:Math.round(+g.avg),chg,d:today};dirty=true;
-          }
+          const p=(g.p!=null&&!isNaN(+g.p))?Math.round(+g.p):undefined;
+          const avg=(g.avg!=null&&!isNaN(+g.avg))?Math.round(+g.avg):undefined;
+          if(p==null&&avg==null)return;
+          // Append one dated reading per day; the trend is computed from these
+          // (we ignore the model's own chg estimate — it was unreliable).
+          const h=(getinHist[id]||[]).filter(x=>x.d!==today);
+          h.push({d:today,p,avg});getinHist[id]=h;dirty=true;
+          if(avg!=null)liveMkt[id]={avg,d:today};
         });
       }
       if(dirty){save();render();}
