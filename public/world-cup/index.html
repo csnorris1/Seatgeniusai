@@ -447,6 +447,7 @@ const SEED_RESULTS={
 let favTeams=["ARG","BRA"];
 let getinHist={};      // per-match get-in price history (see GETIN_SEED)
 let STANDINGS={};      // live group points/played, populated by Refresh (see stakes block)
+let liveKO={};         // completed knockout results keyed by FIFA match number (= bracket id)
 const STORE_KEY="wc-tracker-v2";
 
 function applyState(s){
@@ -456,6 +457,7 @@ function applyState(s){
   liveResults=Object.assign({},SEED_RESULTS,s.liveResults||{});
   getinHist=Object.assign({},GETIN_SEED,s.getinHist||{});
   STANDINGS=Object.assign({},s.STANDINGS||{});
+  liveKO=Object.assign({},s.liveKO||{});
   if(Array.isArray(s.favTeams))favTeams=s.favTeams;
 }
 function hasWS(){return typeof window!=="undefined"&&window.storage&&typeof window.storage.get==="function";}
@@ -468,7 +470,7 @@ async function load(){
   }catch(e){}
 }
 async function save(){
-  const payload=JSON.stringify({prices,picks,stars,liveResults,favTeams,getinHist,STANDINGS});
+  const payload=JSON.stringify({prices,picks,stars,liveResults,favTeams,getinHist,STANDINGS,liveKO});
   try{
     if(hasWS()){await window.storage.set(STORE_KEY,payload,false);}
     else{localStorage.setItem(STORE_KEY,payload);}
@@ -692,7 +694,15 @@ function card(m,roundFace,extra=""){
     }
     rows=teamRow(m.t[0][0],m.t[0][1],"neutral")+mid+teamRow(m.t[1][0],m.t[1][1],"neutral");
   }else{
-    rows=m.t.map(([c,s])=>teamRow(c,s,c===m.w?"win":"out")).join("");
+    const kr=liveKO[m.id];
+    if(kr&&kr.hs!=null&&kr.as!=null){
+      // Real knockout result (actual teams may differ from the projection).
+      const win=kr.hs>kr.as?kr.h:(kr.as>kr.hs?kr.a:null);
+      const mid=`<div class="team vs score">${kr.hs}–${kr.as}<span class="ft">${esc(kr.st||"FT")}</span></div>`;
+      rows=teamRow(kr.h,"",win===kr.h?"win":(win?"out":"neutral"))+mid+teamRow(kr.a,"",win===kr.a?"win":(win?"out":"neutral"));
+    }else{
+      rows=m.t.map(([c,s])=>teamRow(c,s,c===m.w?"win":"out")).join("");
+    }
   }
   const fc=m.face||roundFace||"";
   const customVal=(prices[m.id]!=null)?prices[m.id]:"";
@@ -701,7 +711,7 @@ function card(m,roundFace,extra=""){
   const starOn=stars[m.id]?" on":"";
   const starredCls=stars[m.id]?" starred":"";
   const dealBadge=DEALS.has(String(m.id))?`<span class="deal">★ VALUE</span>`:"";
-  const doneCls=gres?" done":"";
+  const doneCls=(gres||(liveKO[m.id]&&liveKO[m.id].hs!=null))?" done":"";
   const favCls=favTeams.some(c=>m.t.some(t=>t[0]===c))?" fav":"";
   return `<div class="match ${extra}${trackedCls}${starredCls}${doneCls}${favCls}">
     <div class="meta">
@@ -912,6 +922,9 @@ async function refreshScores(){
       }
       if(Array.isArray(parsed.standings)){
         parsed.standings.forEach(s=>{if(s&&s.code){STANDINGS[s.code]={grp:s.grp||GROUP_OF[s.code]||"",pts:+s.pts||0,pl:+s.pl||0};dirty=true;}});
+      }
+      if(Array.isArray(parsed.ko)){
+        parsed.ko.forEach(r=>{if(r&&r.id!=null&&r.h&&r.a){liveKO[r.id]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT"};dirty=true;}});
       }
       if(Array.isArray(parsed.getin)){
         parsed.getin.forEach(g=>{

@@ -445,7 +445,7 @@ Keep it concise and conversational. Bold the key insights.`;
       };
 
       // 1) Bracket data from openfootball (no key needed).
-      let results = [], standings = [], scores = [];
+      let results = [], standings = [], scores = [], ko = [];
       try {
         const ofRes = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
         const of = await ofRes.json();
@@ -460,11 +460,19 @@ Keep it concise and conversational. Bold the key insights.`;
           const grp = grpOf(m.group);
           const h = NAME2CODE[m.team1], a = NAME2CODE[m.team2];
           const ft = m.score && m.score.ft;
-          if (!grp || !h || !a || !Array.isArray(ft) || ft.length < 2) continue;
+          if (!h || !a || !Array.isArray(ft) || ft.length < 2) continue;
           const hs = ft[0], as = ft[1];
-          results.push({ h, a, hs, as, st: 'FT' });
-          bump(h, grp, hs, as);
-          bump(a, grp, as, hs);
+          if (grp) {
+            results.push({ h, a, hs, as, st: 'FT' });
+            bump(h, grp, hs, as);
+            bump(a, grp, as, hs);
+          } else if (m.num) {
+            // Knockout result keyed by FIFA match number, which equals the
+            // page's bracket match id (R32=73-88, R16=89-96, ...).
+            ko.push({ id: m.num, h, a, hs, as, st: 'FT' });
+          } else {
+            continue;
+          }
           played.push({ date: m.date || '', m: `${m.team1} ${hs}-${as} ${m.team2}` });
         }
         standings = Object.entries(stand).map(([code, s]) => ({ code, grp: s.grp, pts: s.pts, pl: s.pl }));
@@ -504,7 +512,7 @@ Keep it concise and conversational. Bold the key insights.`;
         }
       }
 
-      const out = { asof: new Date().toISOString(), scores, results, standings, getin, note };
+      const out = { asof: new Date().toISOString(), scores, results, standings, ko, getin, note };
       return respond(200, { text: JSON.stringify(out) });
     }
 
