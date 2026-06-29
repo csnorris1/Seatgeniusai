@@ -460,20 +460,24 @@ Keep it concise and conversational. Bold the key insights.`;
           const grp = grpOf(m.group);
           const h = NAME2CODE[m.team1], a = NAME2CODE[m.team2];
           const ft = m.score && m.score.ft;
-          if (!h || !a || !Array.isArray(ft) || ft.length < 2) continue;
-          const hs = ft[0], as = ft[1];
+          const hasFt = Array.isArray(ft) && ft.length >= 2;
+          // Both teams must resolve to real codes. This skips knockout slots
+          // that are still placeholders (e.g. "W73"/"L101"), which is exactly
+          // how we know a knockout matchup is "set".
+          if (!h || !a) continue;
           if (grp) {
-            results.push({ h, a, hs, as, st: 'FT' });
-            bump(h, grp, hs, as);
-            bump(a, grp, as, hs);
+            if (!hasFt) continue; // only completed group games
+            results.push({ h, a, hs: ft[0], as: ft[1], st: 'FT' });
+            bump(h, grp, ft[0], ft[1]);
+            bump(a, grp, ft[1], ft[0]);
+            played.push({ date: m.date || '', m: `${m.team1} ${ft[0]}-${ft[1]} ${m.team2}` });
           } else if (m.num) {
-            // Knockout result keyed by FIFA match number, which equals the
-            // page's bracket match id (R32=73-88, R16=89-96, ...).
-            ko.push({ id: m.num, h, a, hs, as, st: 'FT' });
-          } else {
-            continue;
+            // Knockout matchup is set. Keyed by FIFA match number (= bracket id,
+            // R32=73-88, R16=89-96, ...). Include the score if it has been played;
+            // st:"set" means teams known but not yet played.
+            ko.push({ id: m.num, h, a, hs: hasFt ? ft[0] : null, as: hasFt ? ft[1] : null, st: hasFt ? 'FT' : 'set' });
+            if (hasFt) played.push({ date: m.date || '', m: `${m.team1} ${ft[0]}-${ft[1]} ${m.team2}` });
           }
-          played.push({ date: m.date || '', m: `${m.team1} ${hs}-${as} ${m.team2}` });
         }
         standings = Object.entries(stand).map(([code, s]) => ({ code, grp: s.grp, pts: s.pts, pl: s.pl }));
         scores = played.sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 8).map((p) => ({ m: p.m, st: 'FT' }));
