@@ -502,14 +502,20 @@ Keep it concise and conversational. Bold the key insights.`;
             }),
           });
           const aiData = await aiRes.json();
-          const text = Array.isArray(aiData.content)
-            ? aiData.content.filter((b) => b.type === 'text').map((b) => b.text).filter(Boolean).join('\n').trim()
-            : '';
-          const jm = text.match(/\{[\s\S]*\}/);
-          if (jm) {
-            const parsed = JSON.parse(jm[0]);
-            if (Array.isArray(parsed.getin)) getin = parsed.getin;
-            if (typeof parsed.note === 'string') note = parsed.note;
+          if (aiData && aiData.error) {
+            // e.g. low credit balance, rate limit — tell the user instead of
+            // silently showing no prices.
+            note = 'Live prices are temporarily unavailable — try again shortly.';
+          } else {
+            const text = Array.isArray(aiData.content)
+              ? aiData.content.filter((b) => b.type === 'text').map((b) => b.text).filter(Boolean).join('\n').trim()
+              : '';
+            const jm = text.match(/\{[\s\S]*\}/);
+            if (jm) {
+              const parsed = JSON.parse(jm[0]);
+              if (Array.isArray(parsed.getin)) getin = parsed.getin;
+              if (typeof parsed.note === 'string') note = parsed.note;
+            }
           }
         } catch (e) {
           // price lookup failed — return the bracket data without prices.
