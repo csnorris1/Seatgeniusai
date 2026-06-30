@@ -526,6 +526,118 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, { text: JSON.stringify(out) });
     }
 
+    // Central World Cup price logger. Invoked hourly by an EventBridge schedule
+    // (not the public UI). Reads the bracket (openfootball) to find remaining
+    // knockout matches and each one's kickoff time, decides which are "active"
+    // by how close kickoff is, asks Claude for their resale get-in prices in ONE
+    // batched call, and writes a timestamped reading per match to DynamoDB — so
+    // the price curve, and especially the day-of drop, builds on its own with no
+    // user visit. Cadence: every remaining game is priced once a day; games in
+    // their final 24h are priced every hour.
+    if (action === 'wc_log') {
+      const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+      const { marshall } = require('@aws-sdk/util-dynamodb');
+      const ddb = new DynamoDBClient({});
+      const TABLE = process.env.WC_PRICES_TABLE || 'seatgenius-wc-prices';
+
+      const now = new Date();
+      const nowMs = now.getTime();
+      const nowISO = now.toISOString();
+      const DAILY_HOUR_UTC = 12; // once-a-day sweep for games not yet in their final 24h
+
+      // Parse openfootball "date" + "time" (e.g. "2026-06-29" + "16:30 UTC-4")
+      // into a real UTC instant.
+      const kickoffUTC = (date, time) => {
+        if (!date || !time) return null;
+        const m = time.match(/^(\d{1,2}):(\d{2})\s*UTC([+-]\d{1,2})?/i);
+        if (!m) return null;
+        const hh = m[1].padStart(2, '0'), mm = m[2];
+        const off = m[3] ? parseInt(m[3], 10) : 0;
+        const sign = off < 0 ? '-' : '+';
+        const abs = String(Math.abs(off)).padStart(2, '0');
+        const d = new Date(`${date}T${hh}:${mm}:00${sign}${abs}:00`);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      // 1) Remaining knockout matches that are in an active pricing window now.
+      let active = [];
+      try {
+        const ofRes = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+        const of = await ofRes.json();
+        for (const mt of (of.matches || [])) {
+          const isGroup = typeof mt.group === 'string' && mt.group.startsWith('Group ');
+          if (isGroup || !mt.num) continue; // knockout only
+          const ft = (mt.score || {}).ft;
+          if (Array.isArray(ft) && ft.length >= 2) continue; // already has a result
+          const ko = kickoffUTC(mt.date, mt.time);
+          if (!ko) continue;
+          const hrs = (ko.getTime() - nowMs) / 3600000;
+          if (hrs <= 0) continue; // kickoff passed
+          // Active if within the final 24h (hourly) or it's the daily sweep hour.
+          if (!(hrs <= 24 || now.getUTCHours() === DAILY_HOUR_UTC)) continue;
+          active.push({ num: mt.num, kickoff: ko.toISOString(), h: mt.team1 || null, a: mt.team2 || null });
+        }
+      } catch (e) {
+        return respond(502, { error: 'Bracket data unavailable' });
+      }
+
+      if (active.length === 0) {
+        return respond(200, { logged: 0, active: 0, note: 'No matches in an active pricing window this hour.' });
+      }
+
+      // 2) Price all active matches in ONE Claude web-search call.
+      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      if (!ANTHROPIC_API_KEY) return respond(500, { error: 'Pricing is not configured.' });
+
+      const wantList = active.map(a => a.num).join(',');
+      const prompt = `Search the web for current 2026 FIFA World Cup resale ticket prices. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"getin":[{"id":76,"p":1450,"avg":2200,"chg":-8}]}. For ONLY these match ids (${wantList}): "p" = current cheapest all-in resale price (get-in) in whole dollars; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping). Use resale trackers (Vivid Seats, SeatPick, TickPick, StubHub). For undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
+
+      let priced = {};
+      try {
+        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2000,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        const aiData = await aiRes.json();
+        const text = Array.isArray(aiData.content)
+          ? aiData.content.filter(b => b.type === 'text').map(b => b.text).filter(Boolean).join('\n').trim()
+          : '';
+        const jm = text.match(/\{[\s\S]*\}/);
+        if (jm) {
+          const parsed = JSON.parse(jm[0]);
+          for (const g of (parsed.getin || [])) {
+            if (g && g.id != null) priced[g.id] = g;
+          }
+        }
+      } catch (e) {
+        return respond(502, { error: 'Price lookup failed' });
+      }
+
+      // 3) Write one timestamped reading per active match that got a price.
+      let written = 0, noprice = 0;
+      for (const a of active) {
+        const g = priced[a.num];
+        if (!g || g.p == null) { noprice++; continue; }
+        const item = { event_id: `wc-${a.num}`, captured_at: nowISO, match: a.num, kickoff: a.kickoff, p: g.p };
+        if (g.avg != null) item.avg = g.avg;
+        if (g.chg != null) item.chg = g.chg;
+        if (a.h) item.h = a.h;
+        if (a.a) item.a = a.a;
+        try {
+          await ddb.send(new PutItemCommand({ TableName: TABLE, Item: marshall(item, { removeUndefinedValues: true }) }));
+          written++;
+        } catch { noprice++; }
+      }
+
+      return respond(200, { logged: written, active: active.length, no_price: noprice, at: nowISO });
+    }
+
     // Daily price snapshot. Invoked by an EventBridge schedule (not the public
     // UI) once a day. Pulls current SeatGeek price stats for upcoming MLB games
     // and writes one dated reading per game to DynamoDB, so average/lowest-price
