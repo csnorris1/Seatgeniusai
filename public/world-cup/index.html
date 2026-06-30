@@ -192,7 +192,12 @@
   .getin .gi-wow.up{color:#2a0a0a;background:var(--coral)}
   .getin .gi-wow.flat{color:var(--chalk-dim);background:rgba(255,255,255,.07)}
   .getin .gi-asof{color:var(--chalk-dim);opacity:.7;font-size:9.5px;margin-left:auto}
-  .spark{margin:6px 0 2px;padding:8px 10px 6px;border:1px solid var(--card-line);border-radius:9px;background:rgba(245,196,81,.04)}
+  .spark{position:relative;margin:6px 0 2px;padding:8px 10px 6px;border:1px solid var(--card-line);border-radius:9px;background:rgba(245,196,81,.04)}
+  .spark-svg{touch-action:none}
+  .spark-tip{position:absolute;top:24px;left:0;transform:translateX(-50%);pointer-events:none;opacity:0;transition:opacity .08s;z-index:6;background:var(--pitch-0);border:1px solid var(--gold);border-radius:6px;padding:3px 8px;font-family:'Space Mono',monospace;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+  .spark-tip.show{opacity:1}
+  .spark-tip .tp{font-size:11px;font-weight:700;color:var(--gold)}
+  .spark-tip .td{font-size:9px;color:var(--chalk-dim);margin-left:5px}
   .spark-top{display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace}
   .spark-lbl{color:var(--chalk-dim);text-transform:uppercase;font-size:9px;letter-spacing:.12em}
   .spark-cur{color:#fff;font-weight:700;font-size:15px;margin-left:auto}
@@ -671,8 +676,9 @@ function sparkAt(iso){
 function sparkline(m){
   const d=centralHist[m.id]||centralHist[String(m.id)]||[];
   if(d.length<2)return "";
-  const ps=d.map(x=>x[1]).filter(v=>typeof v==="number");
-  if(ps.length<2)return "";
+  const rd=d.filter(x=>typeof x[1]==="number"); // readings with a real price, dates kept aligned
+  if(rd.length<2)return "";
+  const ps=rd.map(x=>x[1]);
   const min=Math.min(...ps),max=Math.max(...ps),span=(max-min)||1;
   const W=240,H=46,pad=5,n=ps.length;
   const xy=i=>[pad+(i/(n-1))*(W-2*pad),pad+(1-(ps[i]-min)/span)*(H-2*pad)];
@@ -682,15 +688,66 @@ function sparkline(m){
   const pct=first>0?Math.round((cur-first)/first*100):0;
   const dir=pct<0?"down":pct>0?"up":"flat";
   const arrow=dir==="down"?"▼":dir==="up"?"▲":"●";
+  // Per-point data the hover handler reads: [vbX, vbY, price, iso]
+  const spk=ps.map((p,i)=>{const[x,y]=xy(i);return[+x.toFixed(1),+y.toFixed(1),p,rd[i][0]];});
   return `<div class="spark">
     <div class="spark-top"><span class="spark-lbl">get-in trend</span><span class="spark-cur">${fmt(cur)}</span><span class="gi-wow ${dir}">${arrow} ${pct===0?"flat":Math.abs(pct)+"%"}</span></div>
-    <svg class="spark-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="spark-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" data-spk='${esc(JSON.stringify(spk))}'>
       <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <line class="spark-guide" y1="0" y2="${H}" stroke="var(--gold)" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
       <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.8" fill="var(--gold)"/>
+      <circle class="spark-hov" r="3.4" fill="#fff" stroke="var(--gold)" stroke-width="1.4" opacity="0"/>
     </svg>
+    <div class="spark-tip"><span class="tp"></span><span class="td"></span></div>
     <div class="spark-foot"><span>${d.length} readings</span><span>since ${esc(sparkAt(d[0][0]))}</span></div>
   </div>`;
 }
+// ── Hover/drag the sparkline to read the price at any point ──────────
+// One delegated pointer handler for every card. The svg uses
+// preserveAspectRatio="none", so viewBox X (0..240) maps linearly to pixel
+// width — we snap the pointer to the nearest logged reading and surface its
+// price + timestamp in a small tooltip.
+(function(){
+  const W=240,H=46;
+  function place(svg,e){
+    let pts; try{pts=JSON.parse(svg.dataset.spk||"[]");}catch{pts=[];}
+    if(pts.length<2)return hide(svg);
+    const r=svg.getBoundingClientRect();
+    if(!r.width)return;
+    const vx=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W));
+    let best=0,bd=Infinity;
+    for(let i=0;i<pts.length;i++){const dx=Math.abs(pts[i][0]-vx);if(dx<bd){bd=dx;best=i;}}
+    const[px,py,price,iso]=pts[best];
+    const guide=svg.querySelector(".spark-guide");
+    const hov=svg.querySelector(".spark-hov");
+    if(guide){guide.setAttribute("x1",px);guide.setAttribute("x2",px);guide.setAttribute("opacity","0.6");}
+    if(hov){hov.setAttribute("cx",px);hov.setAttribute("cy",py);hov.setAttribute("opacity","1");}
+    const spark=svg.closest(".spark"),tip=spark&&spark.querySelector(".spark-tip");
+    if(tip){
+      tip.querySelector(".tp").textContent=fmt(price);
+      tip.querySelector(".td").textContent=sparkAt(iso);
+      // SVG elements lack offsetLeft in Chrome, so measure against the card box
+      const sx=r.left-spark.getBoundingClientRect().left;
+      tip.style.left=(sx+px/W*r.width)+"px";
+      tip.classList.add("show");
+    }
+  }
+  function hide(svg){
+    if(!svg)return;
+    const g=svg.querySelector(".spark-guide"),h=svg.querySelector(".spark-hov");
+    if(g)g.setAttribute("opacity","0");
+    if(h)h.setAttribute("opacity","0");
+    const spark=svg.closest(".spark"),tip=spark&&spark.querySelector(".spark-tip");
+    if(tip)tip.classList.remove("show");
+  }
+  let active=null;
+  document.addEventListener("pointermove",e=>{
+    const svg=e.target.closest&&e.target.closest(".spark-svg");
+    if(svg){if(active&&active!==svg)hide(active);active=svg;place(svg,e);}
+    else if(active){hide(active);active=null;}
+  },{passive:true});
+  document.addEventListener("pointerleave",()=>{if(active){hide(active);active=null;}},{passive:true});
+})();
 
 // ── Stakes signal: clinched / alive / dead rubber ───────────────────
 // "Does this game matter" computed from standings instead of hand-coded notes.
