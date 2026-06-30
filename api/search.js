@@ -751,6 +751,91 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, { logged: written, skipped, scanned: collected.length, date: today });
     }
 
+    // Local events discovery. Pulls everything happening near a city over the
+    // next N days from SeatGeek (all categories — concerts, sports, theater,
+    // comedy, etc.), not just MLB. Defaults are tuned for Chicago city core
+    // (15mi) over the next 7 days, but lat/lon/range/days/q are all overridable
+    // via query params. Returns events grouped-ready (each carries a `category`)
+    // with venue, time, and a buy URL. Price stats are included when SeatGeek
+    // exposes them (often null on the free tier — same limitation as `events`).
+    if (action === 'local') {
+      const lat = params.lat || '41.8781';   // Chicago city center
+      const lon = params.lon || '-87.6298';
+      const range = params.range || '15mi';   // city core
+      const days = Math.min(Math.max(parseInt(params.days, 10) || 7, 1), 31);
+      const perPage = Math.min(Math.max(parseInt(params.per_page, 10) || 60, 1), 100);
+
+      const start = new Date();
+      const end = new Date(Date.now() + days * 864e5);
+      const gte = start.toISOString().slice(0, 10);
+      const lte = end.toISOString().slice(0, 10);
+
+      let url =
+        `https://api.seatgeek.com/2/events?lat=${lat}&lon=${lon}&range=${encodeURIComponent(range)}` +
+        `&per_page=${perPage}&sort=datetime_local.asc` +
+        `&datetime_local.gte=${gte}T00:00:00&datetime_local.lte=${lte}T23:59:59` +
+        `&client_id=${SEATGEEK_CLIENT_ID}`;
+      if (params.q) url += `&q=${encodeURIComponent(params.q)}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Map SeatGeek's event type to a friendly, groupable category label.
+      // SeatGeek uses many granular types (concert, theater, broadway, mlb,
+      // baseball, softball, soccer, comedy, ...). Match by keyword so new/odd
+      // types still bucket sensibly instead of falling to "Other".
+      const SPORT_WORDS = ['mlb','nba','nfl','nhl','mls','soccer','baseball','softball',
+        'basketball','football','hockey','tennis','golf','racing','wrestling','boxing',
+        'mma','ufc','volleyball','lacrosse','rugby','wnba'];
+      const categoryOf = (e) => {
+        const t = (e.type || '').toLowerCase();
+        const has = (...words) => words.some(w => t.includes(w));
+        if (has('concert','music_festival','festival')) return 'Concerts';
+        if (has('comedy')) return 'Comedy';
+        if (has('theater','theatre','broadway','musical','play')) return 'Theater';
+        if (has('dance','classical','ballet','opera','symphony')) return 'Arts';
+        if (SPORT_WORDS.some(w => t.includes(w))) return 'Sports';
+        // Fall back to the top of the taxonomy tree, else a generic bucket.
+        const tax = (e.taxonomies || []).find(x => x && x.name);
+        if (tax) {
+          const n = tax.name.toLowerCase();
+          if (n.includes('sport')) return 'Sports';
+          if (n.includes('concert') || n.includes('music')) return 'Concerts';
+          if (n.includes('theater') || n.includes('theatre')) return 'Theater';
+          if (n.includes('comedy')) return 'Comedy';
+        }
+        return 'Other';
+      };
+
+      const events = (data.events || []).map(e => ({
+        id: e.id,
+        title: e.short_title || e.title,
+        category: categoryOf(e),
+        type: e.type || null,
+        datetime_local: e.datetime_local,
+        venue: e.venue?.name || null,
+        city: e.venue?.city || null,
+        state: e.venue?.state || null,
+        popularity: e.popularity || null,
+        score: e.score || 0,
+        lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || null,
+        average_price: e.stats?.average_price || null,
+        highest_price: e.stats?.highest_price || null,
+        listing_count: e.stats?.listing_count || null,
+        url: e.url,
+        image: e.performers?.[0]?.image || null,
+      }));
+
+      return respond(200, {
+        events,
+        total: data.meta?.total ?? events.length,
+        area: { lat, lon, range },
+        range_days: days,
+        from: gte,
+        to: lte,
+      });
+    }
+
     return respond(400, { error: 'Invalid action' });
 
   } catch (err) {

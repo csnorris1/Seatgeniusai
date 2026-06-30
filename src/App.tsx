@@ -8,6 +8,7 @@ import {
   Info,
   Loader2,
   MapPin,
+  Music,
   Sparkles,
   TrendingUp,
   Trophy,
@@ -42,6 +43,55 @@ type Event = {
   url?: string;
   provider_links?: ProviderLink[];
 };
+
+type LocalEvent = {
+  id: string | number;
+  title: string;
+  category: string;
+  type?: string | null;
+  datetime_local: string;
+  venue?: string | null;
+  city?: string | null;
+  state?: string | null;
+  popularity?: number;
+  lowest_price?: number | null;
+  average_price?: number | null;
+  url?: string;
+  image?: string | null;
+};
+
+// Only these categories are surfaced in the "This Weekend in Chicago" view,
+// in this display order. The `local` action returns more (theater, comedy…)
+// but the product scope here is sporting events + concerts.
+const LOCAL_CATEGORIES = ["Sports", "Concerts"] as const;
+type LocalCategory = (typeof LOCAL_CATEGORIES)[number];
+
+const categoryMeta: Record<
+  LocalCategory,
+  { label: string; chip: string; accent: string }
+> = {
+  Sports: {
+    label: "Sporting Events",
+    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    accent: "text-emerald-400",
+  },
+  Concerts: {
+    label: "Concerts",
+    chip: "border-purple-500/30 bg-purple-500/10 text-purple-300",
+    accent: "text-purple-400",
+  },
+};
+
+function CategoryIcon({
+  category,
+  className,
+}: {
+  category: string;
+  className?: string;
+}) {
+  if (category === "Concerts") return <Music className={className} />;
+  return <Trophy className={className} />;
+}
 
 type Listing = {
   section: string;
@@ -218,6 +268,12 @@ export default function SeatGenius() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [bestPlatform, setBestPlatform] = useState<string | null>(null);
 
+  const [view, setView] = useState<"cubs" | "local">("cubs");
+  const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
+  const [loadingLocal, setLoadingLocal] = useState(false);
+  const [localLoaded, setLocalLoaded] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
   useEffect(() => {
     setLoadingEvents(true);
     fetch(
@@ -228,6 +284,21 @@ export default function SeatGenius() {
       .catch(() => setError("Couldn't load games. Try again."))
       .finally(() => setLoadingEvents(false));
   }, []);
+
+  // Lazily load Chicago-area events the first time the user opens that tab.
+  useEffect(() => {
+    if (view !== "local" || localLoaded) return;
+    setLoadingLocal(true);
+    setLocalError(null);
+    fetch(`${AWS_URL}/search?action=local`)
+      .then((res) => res.json())
+      .then((data) => setLocalEvents(data.events || []))
+      .catch(() => setLocalError("Couldn't load Chicago events. Try again."))
+      .finally(() => {
+        setLoadingLocal(false);
+        setLocalLoaded(true);
+      });
+  }, [view, localLoaded]);
 
   const selectEvent = async (event: Event) => {
     setSelectedEvent(event);
@@ -385,12 +456,47 @@ export default function SeatGenius() {
 
       <main className="mx-auto max-w-5xl px-6 py-10">
         {!selectedEvent && (
-          <EventsView
-            events={events}
-            loading={loadingEvents}
-            error={error}
-            onSelect={selectEvent}
-          />
+          <>
+            <div className="mb-8 inline-flex rounded-lg border border-slate-800 bg-slate-900/50 p-1">
+              <button
+                onClick={() => setView("cubs")}
+                className={cn(
+                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                  view === "cubs"
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-400 hover:text-slate-100",
+                )}
+              >
+                Cubs Games
+              </button>
+              <button
+                onClick={() => setView("local")}
+                className={cn(
+                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                  view === "local"
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-400 hover:text-slate-100",
+                )}
+              >
+                This Weekend in Chicago
+              </button>
+            </div>
+
+            {view === "cubs" ? (
+              <EventsView
+                events={events}
+                loading={loadingEvents}
+                error={error}
+                onSelect={selectEvent}
+              />
+            ) : (
+              <LocalEventsView
+                events={localEvents}
+                loading={loadingLocal}
+                error={localError}
+              />
+            )}
+          </>
         )}
 
         {selectedEvent && (
@@ -462,6 +568,191 @@ function EventsView({
         </div>
       )}
     </>
+  );
+}
+
+function LocalEventsView({
+  events,
+  loading,
+  error,
+}: {
+  events: LocalEvent[];
+  loading: boolean;
+  error: string | null;
+}) {
+  const [filter, setFilter] = useState<"All" | LocalCategory>("All");
+
+  // Keep only the in-scope categories (sports + concerts), then group.
+  const inScope = useMemo(
+    () =>
+      events.filter((e) =>
+        (LOCAL_CATEGORIES as readonly string[]).includes(e.category),
+      ),
+    [events],
+  );
+
+  const grouped = useMemo(() => {
+    const g: Record<LocalCategory, LocalEvent[]> = { Sports: [], Concerts: [] };
+    for (const e of inScope) g[e.category as LocalCategory].push(e);
+    return g;
+  }, [inScope]);
+
+  const visibleCategories: readonly LocalCategory[] =
+    filter === "All" ? LOCAL_CATEGORIES : [filter];
+  const filterOptions: ("All" | LocalCategory)[] = ["All", ...LOCAL_CATEGORIES];
+
+  return (
+    <>
+      <div className="mb-6">
+        <h2 className="text-2xl text-white">This Weekend in Chicago</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Sporting events and concerts happening in the city over the next 7 days
+        </p>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-4 text-sm text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+          Finding events around Chicago…
+        </div>
+      )}
+
+      {!loading && !error && inScope.length === 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-8 text-center text-sm italic text-slate-500">
+          No sporting events or concerts found in the next 7 days.
+        </div>
+      )}
+
+      {!loading && inScope.length > 0 && (
+        <>
+          <div className="mb-6 flex flex-wrap gap-2">
+            {filterOptions.map((c) => {
+              const count =
+                c === "All" ? inScope.length : grouped[c as LocalCategory].length;
+              const active = filter === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setFilter(c)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    active
+                      ? "border-blue-500/40 bg-blue-500/15 text-blue-200"
+                      : "border-slate-700 bg-slate-900/50 text-slate-400 hover:text-slate-200",
+                  )}
+                >
+                  {c === "All" ? "All" : categoryMeta[c as LocalCategory].label}
+                  <span className="text-slate-500">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-8">
+            {visibleCategories.map((cat) =>
+              grouped[cat].length === 0 ? null : (
+                <section key={cat}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <CategoryIcon
+                      category={cat}
+                      className={cn("h-5 w-5", categoryMeta[cat].accent)}
+                    />
+                    <h3 className="text-lg text-white">
+                      {categoryMeta[cat].label}
+                    </h3>
+                    <span className="text-sm text-slate-500">
+                      {grouped[cat].length}
+                    </span>
+                  </div>
+                  <div className="grid gap-3">
+                    {grouped[cat].map((ev) => (
+                      <LocalEventCard key={ev.id} event={ev} />
+                    ))}
+                  </div>
+                </section>
+              ),
+            )}
+          </div>
+        </>
+      )}
+
+      {error && (
+        <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+    </>
+  );
+}
+
+function LocalEventCard({ event }: { event: LocalEvent }) {
+  const cat = (
+    (LOCAL_CATEGORIES as readonly string[]).includes(event.category)
+      ? event.category
+      : "Sports"
+  ) as LocalCategory;
+  const priceLabel = event.lowest_price
+    ? `from $${event.lowest_price}`
+    : event.average_price
+      ? `~$${event.average_price}`
+      : null;
+
+  return (
+    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700">
+      <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                categoryMeta[cat].chip,
+              )}
+            >
+              <CategoryIcon category={cat} className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="truncate text-base text-white">{event.title}</h4>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <Calendar className="h-4 w-4" />
+                  {formatDate(event.datetime_local)}
+                  {formatTime(event.datetime_local) &&
+                    ` • ${formatTime(event.datetime_local)}`}
+                </span>
+                {event.venue && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" />
+                    {event.venue}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {priceLabel && (
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                Starting at
+              </div>
+              <div className="text-lg font-semibold text-white">{priceLabel}</div>
+            </div>
+          )}
+          {event.url && (
+            <Button
+              asChild
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <a href={event.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                Get Tickets
+              </a>
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
