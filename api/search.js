@@ -532,8 +532,8 @@ Keep it concise and conversational. Bold the key insights.`;
     // by how close kickoff is, asks Claude for their resale get-in prices in ONE
     // batched call, and writes a timestamped reading per match to DynamoDB — so
     // the price curve, and especially the day-of drop, builds on its own with no
-    // user visit. Cadence: every remaining game is priced once a day; games in
-    // their final 24h are priced every hour.
+    // user visit. Cadence: every remaining game is priced every few hours (so a
+    // real curve builds within a day); games in their final 24h are priced hourly.
     if (action === 'wc_log') {
       const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
       const { marshall } = require('@aws-sdk/util-dynamodb');
@@ -543,7 +543,7 @@ Keep it concise and conversational. Bold the key insights.`;
       const now = new Date();
       const nowMs = now.getTime();
       const nowISO = now.toISOString();
-      const DAILY_HOUR_UTC = 12; // once-a-day sweep for games not yet in their final 24h
+      const SWEEP_EVERY_HOURS = 3; // off-peak sweep cadence for games not yet in their final 24h
 
       // Parse openfootball "date" + "time" (e.g. "2026-06-29" + "16:30 UTC-4")
       // into a real UTC instant.
@@ -573,8 +573,8 @@ Keep it concise and conversational. Bold the key insights.`;
           if (!ko) continue;
           const hrs = (ko.getTime() - nowMs) / 3600000;
           if (hrs <= 0) continue; // kickoff passed
-          // Active if within the final 24h (hourly) or it's the daily sweep hour.
-          if (!(hrs <= 24 || now.getUTCHours() === DAILY_HOUR_UTC)) continue;
+          // Active if within the final 24h (hourly) or it's an off-peak sweep hour.
+          if (!(hrs <= 24 || now.getUTCHours() % SWEEP_EVERY_HOURS === 0)) continue;
           active.push({ num: mt.num, kickoff: ko.toISOString(), h: mt.team1 || null, a: mt.team2 || null });
         }
       } catch (e) {
