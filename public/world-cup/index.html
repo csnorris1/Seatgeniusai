@@ -192,6 +192,16 @@
   .getin .gi-wow.up{color:#2a0a0a;background:var(--coral)}
   .getin .gi-wow.flat{color:var(--chalk-dim);background:rgba(255,255,255,.07)}
   .getin .gi-asof{color:var(--chalk-dim);opacity:.7;font-size:9.5px;margin-left:auto}
+  .spark{margin:6px 0 2px;padding:8px 10px 6px;border:1px solid var(--card-line);border-radius:9px;background:rgba(245,196,81,.04)}
+  .spark-top{display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace}
+  .spark-lbl{color:var(--chalk-dim);text-transform:uppercase;font-size:9px;letter-spacing:.12em}
+  .spark-cur{color:#fff;font-weight:700;font-size:15px;margin-left:auto}
+  .spark .gi-wow{font-weight:700;font-size:10px;letter-spacing:.04em;padding:1px 6px;border-radius:5px}
+  .spark .gi-wow.down{color:#06231c;background:#2fe39a}
+  .spark .gi-wow.up{color:#2a0a0a;background:var(--coral)}
+  .spark .gi-wow.flat{color:var(--chalk-dim);background:rgba(255,255,255,.07)}
+  .spark-svg{display:block;width:100%;height:44px;margin:5px 0 3px;overflow:visible}
+  .spark-foot{display:flex;justify-content:space-between;font-family:'Space Mono',monospace;font-size:9px;color:var(--chalk-dim);opacity:.75;letter-spacing:.04em}
   .stakes{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:9px 0 2px;font-family:'Space Mono',monospace;font-size:10.5px;line-height:1.4}
   .stakes .sk-tag{font-size:9px;font-weight:700;letter-spacing:.09em;padding:2px 7px;border-radius:5px;flex:none}
   .stakes .sk-why{color:var(--chalk-dim);flex:1;min-width:140px}
@@ -449,7 +459,21 @@ let getinHist={};      // per-match get-in price history (see GETIN_SEED)
 let STANDINGS={};      // live group points/played, populated by Refresh (see stakes block)
 let liveKO={};         // completed knockout results keyed by FIFA match number (= bracket id)
 let liveMkt={};        // live average price + 7-day trend by match id, populated by Refresh
+let centralHist={};    // server-logged get-in price curve by match id: [[isoTime,price],...]
 const STORE_KEY="wc-tracker-v2";
+const WC_API="https://xmtgbs44e2mrxnm2en2hegwe4q0dzzzk.lambda-url.us-east-2.on.aws/";
+
+// Pull the central, server-logged price curve (one reading per hour near kickoff,
+// daily otherwise) so each card can draw a real trend line — independent of this
+// user's own Refreshes. Failures are silent: cards just fall back to no sparkline.
+async function loadCentralHist(){
+  try{
+    const res=await fetch(WC_API+"?action=wc_history");
+    if(!res.ok)return;
+    const data=await res.json();
+    if(data&&data.hist)centralHist=data.hist;
+  }catch(e){}
+}
 
 function applyState(s){
   prices=Object.assign({},SEED_PRICES,s.prices||{});
@@ -634,6 +658,39 @@ function getinLine(id){
   }
   return `<div class="getin"><span class="gi-lbl">get-in</span><span class="gi-val">${fmt(w.cur)}</span>${badge}<span class="gi-asof">${esc(w.asof)}</span></div>`;
 }
+// ── Get-in price curve from our central server log ──────────────────
+// Draws a small sparkline of the get-in price over time for a match, fed by the
+// hourly-logged readings in centralHist. The number is the latest get-in; the %
+// is the move across the shown window (down = price softening = good for buyers).
+// Hidden until there are at least 2 readings.
+function sparkAt(iso){
+  const d=new Date(iso); if(isNaN(d))return "";
+  return d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+
+         d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+}
+function sparkline(m){
+  const d=centralHist[m.id]||centralHist[String(m.id)]||[];
+  if(d.length<2)return "";
+  const ps=d.map(x=>x[1]).filter(v=>typeof v==="number");
+  if(ps.length<2)return "";
+  const min=Math.min(...ps),max=Math.max(...ps),span=(max-min)||1;
+  const W=240,H=46,pad=5,n=ps.length;
+  const xy=i=>[pad+(i/(n-1))*(W-2*pad),pad+(1-(ps[i]-min)/span)*(H-2*pad)];
+  const pts=ps.map((_,i)=>xy(i).map(v=>v.toFixed(1)).join(",")).join(" ");
+  const [cx,cy]=xy(n-1);
+  const cur=ps[n-1],first=ps[0];
+  const pct=first>0?Math.round((cur-first)/first*100):0;
+  const dir=pct<0?"down":pct>0?"up":"flat";
+  const arrow=dir==="down"?"▼":dir==="up"?"▲":"●";
+  return `<div class="spark">
+    <div class="spark-top"><span class="spark-lbl">get-in trend</span><span class="spark-cur">${fmt(cur)}</span><span class="gi-wow ${dir}">${arrow} ${pct===0?"flat":Math.abs(pct)+"%"}</span></div>
+    <svg class="spark-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.8" fill="var(--gold)"/>
+    </svg>
+    <div class="spark-foot"><span>${d.length} readings</span><span>since ${esc(sparkAt(d[0][0]))}</span></div>
+  </div>`;
+}
 
 // ── Stakes signal: clinched / alive / dead rubber ───────────────────
 // "Does this game matter" computed from standings instead of hand-coded notes.
@@ -746,6 +803,7 @@ function card(m,roundFace,extra=""){
     ${stakesLine(m)}
     ${priceHead(m)}
     ${getinLine(m.id)}
+    ${sparkline(m)}
     ${timingLine(m)}
     ${compareLink(m)}
     <div class="pricebox">
@@ -992,7 +1050,7 @@ document.getElementById("foot").innerHTML=
   "The +15% is FIFA's resale buyer fee. Add more games by extending the CATS and REMAINING objects up top. "+
   "NEW · get-in line shows the cheapest listed ticket per match plus its 7-day move (▼ green = softening, ▲ coral = heating up). It's empty until you hit Refresh, which pulls live get-in prices and their recent change for the featured matches — no placeholder numbers. "+
   "NEW · the ⚑ stakes chip on group games is computed (clinched / alive / dead rubber) from the verified clinched set, and switches to live standings once Refresh populates them — it also drives the ⏱ buy-timing badge.";
-(async()=>{await load();render();renderFavBar();document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
+(async()=>{await load();render();renderFavBar();loadCentralHist().then(render);document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
 </script>
 </body>
 </html>

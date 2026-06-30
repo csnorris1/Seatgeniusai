@@ -638,6 +638,41 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, { logged: written, active: active.length, no_price: noprice, at: nowISO });
     }
 
+    // Read-side for the World Cup card sparklines: returns each match's saved
+    // get-in price readings (timestamp + price) from DynamoDB, most-recent first
+    // capped per match to keep the payload small. Public (the page calls it on
+    // load).
+    if (action === 'wc_history') {
+      const { DynamoDBClient, ScanCommand } = require('@aws-sdk/client-dynamodb');
+      const { unmarshall } = require('@aws-sdk/util-dynamodb');
+      const ddb = new DynamoDBClient({});
+      const TABLE = process.env.WC_PRICES_TABLE || 'seatgenius-wc-prices';
+
+      const byMatch = {};
+      try {
+        let ExclusiveStartKey;
+        do {
+          const out = await ddb.send(new ScanCommand({ TableName: TABLE, ExclusiveStartKey }));
+          for (const it of (out.Items || [])) {
+            const r = unmarshall(it);
+            if (r.match == null || r.p == null || !r.captured_at) continue;
+            (byMatch[r.match] || (byMatch[r.match] = [])).push([r.captured_at, r.p]);
+          }
+          ExclusiveStartKey = out.LastEvaluatedKey;
+        } while (ExclusiveStartKey);
+      } catch (e) {
+        return respond(500, { error: 'history unavailable' });
+      }
+
+      // Sort each match ascending by time; keep the most recent ~72 readings.
+      const hist = {};
+      for (const [m, arr] of Object.entries(byMatch)) {
+        arr.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+        hist[m] = arr.slice(-72);
+      }
+      return respond(200, { hist, at: new Date().toISOString() });
+    }
+
     // Daily price snapshot. Invoked by an EventBridge schedule (not the public
     // UI) once a day. Pulls current SeatGeek price stats for upcoming MLB games
     // and writes one dated reading per game to DynamoDB, so average/lowest-price
