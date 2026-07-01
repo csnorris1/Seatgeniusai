@@ -480,6 +480,26 @@ async function loadCentralHist(){
   }catch(e){}
 }
 
+// Pull the live knockout bracket + group results from the server (openfootball-
+// derived). wantList=none skips the slow resale-price lookup, so this is fast
+// enough to run on every page load — keeping the cards on the ACTUAL matchups
+// and results, not the preseason projection. Silent on failure (cards keep the
+// projection). Winners feed koWinner/resolveSlot to fill the next round.
+async function loadBracket(){
+  try{
+    const res=await fetch(WC_API+"?action=wc_refresh&wantList=none");
+    if(!res.ok)return;
+    const data=await res.json();
+    let parsed=null;try{parsed=JSON.parse(data.text||"");}catch(e){}
+    if(!parsed)return;
+    let dirty=false;
+    if(Array.isArray(parsed.results))parsed.results.forEach(r=>{if(!r.h||!r.a)return;const k=[r.h,r.a].sort().join("-");liveResults[k]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT"};dirty=true;});
+    if(Array.isArray(parsed.standings))parsed.standings.forEach(s=>{if(s&&s.code){STANDINGS[s.code]={grp:s.grp||GROUP_OF[s.code]||"",pts:+s.pts||0,pl:+s.pl||0};dirty=true;}});
+    if(Array.isArray(parsed.ko))parsed.ko.forEach(r=>{if(r&&r.id!=null&&r.h&&r.a){liveKO[r.id]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT",w:r.w||null};dirty=true;}});
+    if(dirty)save();
+  }catch(e){}
+}
+
 function applyState(s){
   prices=Object.assign({},SEED_PRICES,s.prices||{});
   picks=Object.assign({},SEED_PICKS,s.picks||{});
@@ -814,6 +834,14 @@ function resultFor(m){
   const k=[m.t[0][0],m.t[1][0]].sort().join("-");
   return liveResults[k]||null;
 }
+// Knockout propagation: once a feeder match has a result, its winner/loser is
+// known, so a slot labelled "W73"/"L101" resolves to a real team even before
+// openfootball fills the next-round bracket. Only one round propagates at a time
+// (a future round stays projected until its feeders are played) — which is exactly
+// how much we can actually know.
+function koWinner(id){const k=liveKO[id];if(!k||k.hs==null)return null;return k.w||(k.hs>k.as?k.h:(k.as>k.hs?k.a:null));}
+function koLoser(id){const k=liveKO[id];if(!k||k.hs==null)return null;const w=koWinner(id);if(!w)return null;return w===k.h?k.a:k.h;}
+function resolveSlot(label){let mm;if(mm=/^W(\d+)$/.exec(label||""))return koWinner(+mm[1]);if(mm=/^L(\d+)$/.exec(label||""))return koLoser(+mm[1]);return null;}
 function card(m,roundFace,extra=""){
   const gres=m.group?resultFor(m):null;
   let rows;
@@ -829,14 +857,18 @@ function card(m,roundFace,extra=""){
     const kr=liveKO[m.id];
     if(kr&&kr.hs!=null&&kr.as!=null){
       // Real knockout result (actual teams may differ from the projection).
-      const win=kr.hs>kr.as?kr.h:(kr.as>kr.hs?kr.a:null);
+      // Winner comes from the server (handles penalty/extra-time deciders).
+      const win=kr.w||(kr.hs>kr.as?kr.h:(kr.as>kr.hs?kr.a:null));
       const mid=`<div class="team vs score">${kr.hs}–${kr.as}<span class="ft">${esc(kr.st||"FT")}</span></div>`;
       rows=teamRow(kr.h,"",win===kr.h?"win":(win?"out":"neutral"))+mid+teamRow(kr.a,"",win===kr.a?"win":(win?"out":"neutral"));
     }else if(kr&&kr.h&&kr.a){
       // Matchup is set but not yet played — show the real teams, no projection.
       rows=teamRow(kr.h,"","neutral")+'<div class="team vs">VS</div>'+teamRow(kr.a,"","neutral");
     }else{
-      rows=m.t.map(([c,s])=>teamRow(c,s,c===m.w?"win":"out")).join("");
+      // No live entry for this match yet. Resolve each slot from the bracket
+      // where its feeder match is decided; otherwise keep the projection.
+      const slot=(c,lbl)=>{const r=resolveSlot(lbl);return r?teamRow(r,"","neutral"):teamRow(c,lbl,c===m.w?"win":"out");};
+      rows=slot(m.t[0][0],m.t[0][1])+'<div class="team vs">VS</div>'+slot(m.t[1][0],m.t[1][1]);
     }
   }
   const fc=m.face||roundFace||"";
@@ -847,7 +879,7 @@ function card(m,roundFace,extra=""){
   const starredCls=stars[m.id]?" starred":"";
   const dealBadge=DEALS.has(String(m.id))?`<span class="deal">★ VALUE</span>`:"";
   const doneCls=(gres||(liveKO[m.id]&&liveKO[m.id].hs!=null))?" done":"";
-  const koT=(!m.group&&liveKO[m.id]&&liveKO[m.id].h)?[liveKO[m.id].h,liveKO[m.id].a]:m.t.map(t=>t[0]);
+  const koT=(!m.group)?((liveKO[m.id]&&liveKO[m.id].h)?[liveKO[m.id].h,liveKO[m.id].a]:[resolveSlot(m.t[0][1])||m.t[0][0],resolveSlot(m.t[1][1])||m.t[1][0]]):m.t.map(t=>t[0]);
   const favCls=favTeams.some(c=>koT.includes(c))?" fav":"";
   return `<div class="match ${extra}${trackedCls}${starredCls}${doneCls}${favCls}">
     <div class="meta">
@@ -1076,7 +1108,7 @@ async function refreshScores(){
         parsed.standings.forEach(s=>{if(s&&s.code){STANDINGS[s.code]={grp:s.grp||GROUP_OF[s.code]||"",pts:+s.pts||0,pl:+s.pl||0};dirty=true;}});
       }
       if(Array.isArray(parsed.ko)){
-        parsed.ko.forEach(r=>{if(r&&r.id!=null&&r.h&&r.a){liveKO[r.id]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT"};dirty=true;}});
+        parsed.ko.forEach(r=>{if(r&&r.id!=null&&r.h&&r.a){liveKO[r.id]={h:r.h,a:r.a,hs:r.hs,as:r.as,st:r.st||"FT",w:r.w||null};dirty=true;}});
       }
       if(Array.isArray(parsed.getin)){
         parsed.getin.forEach(g=>{
@@ -1107,7 +1139,7 @@ document.getElementById("foot").innerHTML=
   "The +15% is FIFA's resale buyer fee. Add more games by extending the CATS and REMAINING objects up top. "+
   "NEW · get-in line shows the cheapest listed ticket per match plus its 7-day move (▼ green = softening, ▲ coral = heating up). It's empty until you hit Refresh, which pulls live get-in prices and their recent change for the featured matches — no placeholder numbers. "+
   "NEW · the ⚑ stakes chip on group games is computed (clinched / alive / dead rubber) from the verified clinched set, and switches to live standings once Refresh populates them — it also drives the ⏱ buy-timing badge.";
-(async()=>{await load();render();renderFavBar();loadCentralHist().then(render);document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
+(async()=>{await load();render();renderFavBar();loadBracket().then(render);loadCentralHist().then(render);document.getElementById("favAdd").addEventListener("change",e=>{const c=e.target.value;if(c&&!favTeams.includes(c)){favTeams.push(c);save();renderFavBar();render();}e.target.value="";});document.getElementById("refreshBtn").addEventListener("click",refreshScores);document.getElementById("teamSel").addEventListener("change",e=>{teamFilter=e.target.value;renderFavBar();render();});populateCitySel();document.getElementById("citySel").addEventListener("change",e=>{cityFilter=e.target.value;render();});})();
 </script>
 </body>
 </html>

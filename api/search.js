@@ -460,6 +460,8 @@ Keep it concise and conversational. Bold the key insights.`;
           const grp = grpOf(m.group);
           const h = NAME2CODE[m.team1], a = NAME2CODE[m.team2];
           const ft = m.score && m.score.ft;
+          const et = m.score && m.score.et; // extra time
+          const pen = m.score && m.score.p; // penalty shootout
           const hasFt = Array.isArray(ft) && ft.length >= 2;
           // Both teams must resolve to real codes. This skips knockout slots
           // that are still placeholders (e.g. "W73"/"L101"), which is exactly
@@ -474,8 +476,16 @@ Keep it concise and conversational. Bold the key insights.`;
           } else if (m.num) {
             // Knockout matchup is set. Keyed by FIFA match number (= bracket id,
             // R32=73-88, R16=89-96, ...). Include the score if it has been played;
-            // st:"set" means teams known but not yet played.
-            ko.push({ id: m.num, h, a, hs: hasFt ? ft[0] : null, as: hasFt ? ft[1] : null, st: hasFt ? 'FT' : 'set' });
+            // st:"set" means teams known but not yet played. `w` = who advanced,
+            // resolved from the decisive stage (penalties > extra time > full time)
+            // so the page can propagate winners into the next round even before
+            // openfootball fills those slots.
+            const decisive = (Array.isArray(pen) && pen.length >= 2) ? pen
+              : (Array.isArray(et) && et.length >= 2) ? et
+              : (hasFt ? ft : null);
+            const w = decisive ? (decisive[0] > decisive[1] ? h : (decisive[1] > decisive[0] ? a : null)) : null;
+            const decidedByPens = hasFt && Array.isArray(pen) && pen.length >= 2;
+            ko.push({ id: m.num, h, a, hs: hasFt ? ft[0] : null, as: hasFt ? ft[1] : null, st: hasFt ? (decidedByPens ? 'pens' : 'FT') : 'set', w });
             if (hasFt) played.push({ date: m.date || '', m: `${m.team1} ${ft[0]}-${ft[1]} ${m.team2}` });
           }
         }
