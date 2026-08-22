@@ -143,8 +143,9 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
               strokeDasharray="5 4"
             />
             <text
-              x={W - PAD.right + 6}
-              y={model.y(model.typical) + 3.5}
+              x={W - PAD.right}
+              y={model.y(model.typical) - 6}
+              textAnchor="end"
               fontSize="10"
               fill="#94a3b8"
             >
