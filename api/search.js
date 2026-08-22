@@ -603,6 +603,51 @@ Keep it concise and conversational. Bold the key insights.`;
       });
     }
 
+    // TEMPORARY demo seeding. Writes 5 days of synthetic 6-hourly price
+    // readings for every tracked event (or one via event_id) so the price
+    // charts and trend verdicts can be demoed before the real hourly sweep has
+    // an Anthropic key. Every row carries demo:true so real data can later be
+    // separated/purged. Timestamps are rounded to 6h boundaries, so re-running
+    // overwrites the same rows instead of duplicating them. Curve shape is
+    // picked deterministically per event id (falling / rising / dip-recover).
+    if (action === 'seed_demo') {
+      const t = priceHistoryTools();
+      const list = await t.getTracked();
+      const targets = event_id ? list.filter(e => String(e.id) === String(event_id)) : list;
+      if (targets.length === 0) return respond(400, { error: 'No tracked events to seed.' });
+
+      const SIX_H = 6 * 3600e3;
+      const nowMs = Date.now();
+      let written = 0;
+      for (const e of targets) {
+        const seedNum = [...String(e.id)].reduce((a, c) => a + c.charCodeAt(0), 0);
+        const shape = seedNum % 3;
+        const base = 60 + (seedNum % 200);
+        for (let i = 20; i >= 0; i--) {
+          const ts = new Date(Math.floor((nowMs - i * SIX_H) / SIX_H) * SIX_H).toISOString();
+          const prog = (20 - i) / 20;
+          let f;
+          if (shape === 0) f = 1.25 - 0.35 * prog;               // falling into the event
+          else if (shape === 1) f = 0.95 + 0.3 * prog;           // climbing (hot demand)
+          else f = 1.1 - 0.25 * Math.sin(prog * Math.PI);        // dip, then recover
+          const wiggle = 1 + 0.04 * Math.sin(i * 2.1 + seedNum);
+          const item = {
+            event_id: String(e.id),
+            date: ts,
+            p: Math.round(base * f * wiggle),
+            avg: Math.round(base * 1.35),
+            title: e.title,
+            demo: true,
+          };
+          try {
+            await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item) }));
+            written++;
+          } catch { /* keep seeding the rest */ }
+        }
+      }
+      return respond(200, { seeded: written, events: targets.length, note: 'DEMO data (demo:true) — separate from real readings before launch.' });
+    }
+
     // World Cup live refresh. Results + standings come from openfootball's
     // public-domain 2026 JSON (no API key, complete, accurate) so the bracket
     // reflects every real group result. The Anthropic key is used only for what
