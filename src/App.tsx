@@ -1,15 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
+  BellPlus,
+  BellRing,
   Calendar,
   CheckCircle2,
+  Clock,
+  Drama,
   ExternalLink,
   Info,
+  Laugh,
+  LineChart,
   Loader2,
   MapPin,
   Music,
+  Palette,
+  Search,
   Sparkles,
+  Ticket,
   TrendingUp,
   Trophy,
 } from "lucide-react";
@@ -18,11 +27,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
-import { calculateValueScore, type ValueScoreBreakdown } from "@/lib/valueScore";
+import { PriceChart } from "@/components/PriceChart";
+import { buyTiming, type BuyVerdict, type Reading } from "@/lib/buyTiming";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
-
-const CUBS_TEAM = { name: "Chicago Cubs", short: "Cubs", city: "Chicago" };
 
 type ProviderLink = { provider: string; id: string };
 
@@ -30,6 +38,7 @@ type Event = {
   id: string | number;
   title: string;
   short_title?: string;
+  category?: string;
   datetime_local: string;
   venue: string;
   city: string;
@@ -42,6 +51,18 @@ type Event = {
   average_price?: number;
   url?: string;
   provider_links?: ProviderLink[];
+};
+
+type TrackedEvent = {
+  id: string;
+  title: string;
+  datetime_local?: string | null;
+  venue?: string | null;
+  city?: string | null;
+  category?: string | null;
+  popularity?: number | null;
+  url?: string | null;
+  tracked_at?: string;
 };
 
 type LocalEvent = {
@@ -66,12 +87,9 @@ type LocalEvent = {
 const LOCAL_CATEGORIES = ["Sports", "Concerts"] as const;
 type LocalCategory = (typeof LOCAL_CATEGORIES)[number];
 
-const categoryMeta: Record<
-  LocalCategory,
-  { label: string; chip: string; accent: string }
-> = {
+const categoryMeta: Record<string, { label: string; chip: string; accent: string }> = {
   Sports: {
-    label: "Sporting Events",
+    label: "Sports",
     chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     accent: "text-emerald-400",
   },
@@ -80,17 +98,52 @@ const categoryMeta: Record<
     chip: "border-purple-500/30 bg-purple-500/10 text-purple-300",
     accent: "text-purple-400",
   },
+  Theater: {
+    label: "Theater",
+    chip: "border-pink-500/30 bg-pink-500/10 text-pink-300",
+    accent: "text-pink-400",
+  },
+  Comedy: {
+    label: "Comedy",
+    chip: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+    accent: "text-yellow-400",
+  },
+  Arts: {
+    label: "Arts",
+    chip: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+    accent: "text-cyan-400",
+  },
+  Other: {
+    label: "Event",
+    chip: "border-slate-600/40 bg-slate-500/10 text-slate-300",
+    accent: "text-slate-400",
+  },
 };
+
+const metaFor = (category?: string | null) =>
+  categoryMeta[category || "Other"] || categoryMeta.Other;
 
 function CategoryIcon({
   category,
   className,
 }: {
-  category: string;
+  category?: string | null;
   className?: string;
 }) {
-  if (category === "Concerts") return <Music className={className} />;
-  return <Trophy className={className} />;
+  switch (category) {
+    case "Concerts":
+      return <Music className={className} />;
+    case "Theater":
+      return <Drama className={className} />;
+    case "Comedy":
+      return <Laugh className={className} />;
+    case "Arts":
+      return <Palette className={className} />;
+    case "Sports":
+      return <Trophy className={className} />;
+    default:
+      return <Ticket className={className} />;
+  }
 }
 
 type Listing = {
@@ -255,35 +308,66 @@ function InsightIcon({ tone, className }: { tone: InsightTone; className?: strin
 }
 
 export default function SeatGenius() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [view, setView] = useState<"discover" | "watch" | "local">("discover");
+
+  // Discover: search + trending
+  const [query, setQuery] = useState("");
+  const [searched, setSearched] = useState<string | null>(null);
+  const [results, setResults] = useState<Event[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [trending, setTrending] = useState<Event[]>([]);
+  const [loadingTrending, setLoadingTrending] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Price Watch (tracked events)
+  const [tracked, setTracked] = useState<TrackedEvent[]>([]);
+  const [loadingTracked, setLoadingTracked] = useState(false);
+  const [trackedLoaded, setTrackedLoaded] = useState(false);
+
+  // Event detail
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [buyUrl, setBuyUrl] = useState<string | null>(null);
   const [tmUrl, setTmUrl] = useState<string | null>(null);
   const [loadingListings, setLoadingListings] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [bestPlatform, setBestPlatform] = useState<string | null>(null);
+  const [readings, setReadings] = useState<Reading[]>([]);
+  const [isTracked, setIsTracked] = useState(false);
+  const [trackBusy, setTrackBusy] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
-  const [view, setView] = useState<"cubs" | "local">("cubs");
+  // Local (This Weekend in Chicago)
   const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoadingEvents(true);
-    fetch(
-      `${AWS_URL}/search?action=events&team=${encodeURIComponent(CUBS_TEAM.name)}`,
-    )
+    fetch(`${AWS_URL}/search?action=trending`)
       .then((res) => res.json())
-      .then((data) => setEvents(data.events || []))
-      .catch(() => setError("Couldn't load games. Try again."))
-      .finally(() => setLoadingEvents(false));
+      .then((data) => setTrending(data.events || []))
+      .catch(() => setError("Couldn't load trending events. Try again."))
+      .finally(() => setLoadingTrending(false));
   }, []);
+
+  const loadTracked = useCallback(() => {
+    setLoadingTracked(true);
+    fetch(`${AWS_URL}/search?action=tracked`)
+      .then((res) => res.json())
+      .then((data) => setTracked(data.events || []))
+      .catch(() => setTracked([]))
+      .finally(() => {
+        setLoadingTracked(false);
+        setTrackedLoaded(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (view === "watch" && !trackedLoaded) loadTracked();
+  }, [view, trackedLoaded, loadTracked]);
 
   // Lazily load Chicago-area events the first time the user opens that tab.
   useEffect(() => {
@@ -300,6 +384,32 @@ export default function SeatGenius() {
       });
   }, [view, localLoaded]);
 
+  const runSearch = async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    setSearching(true);
+    setError(null);
+    setSearched(trimmed);
+    try {
+      const res = await fetch(
+        `${AWS_URL}/search?action=events&q=${encodeURIComponent(trimmed)}`,
+      );
+      const data = await res.json();
+      setResults(data.events || []);
+    } catch {
+      setError("Search failed. Try again.");
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearched(null);
+    setResults([]);
+    setQuery("");
+  };
+
   const selectEvent = async (event: Event) => {
     setSelectedEvent(event);
     setListings([]);
@@ -308,12 +418,15 @@ export default function SeatGenius() {
     setResult(null);
     setPlatforms([]);
     setBestPlatform(null);
-    setError(null);
+    setReadings([]);
+    setIsTracked(false);
+    setDetailError(null);
     setLoadingListings(true);
     try {
-      const [listingsRes, compareRes] = await Promise.all([
+      const [listingsRes, compareRes, historyRes] = await Promise.all([
         fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`),
         fetch(`${AWS_URL}/search?action=compare&event_id=${event.id}`),
+        fetch(`${AWS_URL}/search?action=history&event_id=${event.id}`),
       ]);
       const listingsData = await listingsRes.json();
       setListings(listingsData.listings || []);
@@ -322,10 +435,51 @@ export default function SeatGenius() {
       const compareData = await compareRes.json();
       setPlatforms(compareData.platforms || []);
       setBestPlatform(compareData.best_platform || null);
+      const historyData = await historyRes.json();
+      setReadings(historyData.readings || []);
+      setIsTracked(Boolean(historyData.tracked));
     } catch {
-      setError("Couldn't load listings. Try again.");
+      setDetailError("Couldn't load event details. Try again.");
     } finally {
       setLoadingListings(false);
+    }
+  };
+
+  const toggleTrack = async () => {
+    if (!selectedEvent || trackBusy) return;
+    setTrackBusy(true);
+    try {
+      if (isTracked) {
+        await fetch(
+          `${AWS_URL}/search?action=untrack&event_id=${selectedEvent.id}`,
+        );
+        setIsTracked(false);
+      } else {
+        const qs = new URLSearchParams({
+          action: "track",
+          event_id: String(selectedEvent.id),
+          title: selectedEvent.short_title || selectedEvent.title || "",
+          date: selectedEvent.datetime_local || "",
+          venue: selectedEvent.venue || "",
+          city: selectedEvent.city || "",
+          category: selectedEvent.category || "",
+          url: selectedEvent.url || "",
+        });
+        if (selectedEvent.popularity != null)
+          qs.set("popularity", String(selectedEvent.popularity));
+        const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
+        const data = await res.json();
+        if (res.ok && data.ok) setIsTracked(true);
+        else
+          setDetailError(
+            data.error || "Couldn't track this event. Try again.",
+          );
+      }
+      setTrackedLoaded(false); // refresh the watchlist next time it's opened
+    } catch {
+      setDetailError("Couldn't update tracking. Try again.");
+    } finally {
+      setTrackBusy(false);
     }
   };
 
@@ -333,7 +487,7 @@ export default function SeatGenius() {
     if (!selectedEvent) return;
     setAnalyzing(true);
     setResult(null);
-    setError(null);
+    setDetailError(null);
 
     const listingText = listings
       .map(
@@ -342,7 +496,7 @@ export default function SeatGenius() {
       )
       .join("\n");
 
-    const gameDay = new Date(selectedEvent.datetime_local).toLocaleDateString(
+    const eventDay = new Date(selectedEvent.datetime_local).toLocaleDateString(
       "en-US",
       { weekday: "long" },
     );
@@ -369,9 +523,11 @@ export default function SeatGenius() {
     try {
       const qs = new URLSearchParams({
         action: "analyze",
+        event_id: String(selectedEvent.id),
         title: selectedEvent.title ?? "",
+        category: selectedEvent.category ?? "",
         date: formatDate(selectedEvent.datetime_local),
-        gameDay,
+        gameDay: eventDay,
         venue: selectedEvent.venue ?? "",
         city: selectedEvent.city ?? "",
         state: selectedEvent.state ?? "",
@@ -379,8 +535,8 @@ export default function SeatGenius() {
           selectedEvent.venue_capacity != null
             ? String(selectedEvent.venue_capacity)
             : "",
-        homeTeam: selectedEvent.home_team || "Unknown",
-        awayTeam: selectedEvent.away_team || "Unknown",
+        homeTeam: selectedEvent.home_team || "",
+        awayTeam: selectedEvent.away_team || "",
         demandLevel,
         popularity:
           selectedEvent.popularity != null
@@ -394,12 +550,12 @@ export default function SeatGenius() {
       const finalText = (data.analysis || "").trim();
       if (finalText) setResult(finalText);
       else
-        setError(
+        setDetailError(
           `Couldn't get analysis: ${data.error?.message || data.error || "Unknown error"}`,
         );
     } catch (err) {
       console.error("AI analysis fetch error:", err);
-      setError("AI analysis failed. Try again.");
+      setDetailError("AI analysis failed. Try again.");
     } finally {
       setAnalyzing(false);
     }
@@ -409,16 +565,29 @@ export default function SeatGenius() {
     setSelectedEvent(null);
     setListings([]);
     setResult(null);
-    setError(null);
+    setDetailError(null);
     setBuyUrl(null);
     setTmUrl(null);
     setPlatforms([]);
     setBestPlatform(null);
+    setReadings([]);
   };
 
   const selectedScore = useMemo(
     () => (selectedEvent ? dealScore(selectedEvent) : null),
     [selectedEvent],
+  );
+
+  const verdict = useMemo(
+    () =>
+      selectedEvent
+        ? buyTiming({
+            datetime_local: selectedEvent.datetime_local,
+            popularity: selectedEvent.popularity,
+            readings,
+          })
+        : null,
+    [selectedEvent, readings],
   );
 
   return (
@@ -432,7 +601,7 @@ export default function SeatGenius() {
               <span className="text-blue-400">.</span>
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Find the best deal on Cubs tickets at Wrigley Field.
+              Know the best time to buy tickets — to anything.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -458,38 +627,54 @@ export default function SeatGenius() {
         {!selectedEvent && (
           <>
             <div className="mb-8 inline-flex rounded-lg border border-slate-800 bg-slate-900/50 p-1">
-              <button
-                onClick={() => setView("cubs")}
-                className={cn(
-                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-                  view === "cubs"
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-400 hover:text-slate-100",
-                )}
-              >
-                Cubs Games
-              </button>
-              <button
-                onClick={() => setView("local")}
-                className={cn(
-                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-                  view === "local"
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-400 hover:text-slate-100",
-                )}
-              >
-                This Weekend in Chicago
-              </button>
+              {(
+                [
+                  ["discover", "Discover"],
+                  ["watch", "Price Watch"],
+                  ["local", "This Weekend in Chicago"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setView(key)}
+                  className={cn(
+                    "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                    view === key
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-400 hover:text-slate-100",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {view === "cubs" ? (
-              <EventsView
-                events={events}
-                loading={loadingEvents}
+            {view === "discover" && (
+              <DiscoverView
+                query={query}
+                setQuery={setQuery}
+                onSearch={runSearch}
+                onClear={clearSearch}
+                searched={searched}
+                results={results}
+                searching={searching}
+                trending={trending}
+                loadingTrending={loadingTrending}
                 error={error}
                 onSelect={selectEvent}
               />
-            ) : (
+            )}
+
+            {view === "watch" && (
+              <WatchView
+                tracked={tracked}
+                loading={loadingTracked}
+                onSelect={selectEvent}
+                onRefresh={loadTracked}
+              />
+            )}
+
+            {view === "local" && (
               <LocalEventsView
                 events={localEvents}
                 loading={loadingLocal}
@@ -499,9 +684,14 @@ export default function SeatGenius() {
           </>
         )}
 
-        {selectedEvent && (
+        {selectedEvent && verdict && (
           <EventDetail
             event={selectedEvent}
+            verdict={verdict}
+            readings={readings}
+            isTracked={isTracked}
+            trackBusy={trackBusy}
+            onToggleTrack={toggleTrack}
             listings={listings}
             buyUrl={buyUrl}
             tmUrl={tmUrl}
@@ -510,7 +700,7 @@ export default function SeatGenius() {
             loadingListings={loadingListings}
             analyzing={analyzing}
             result={result}
-            error={error}
+            error={detailError}
             score={selectedScore}
             onBack={resetToEvents}
             onAnalyze={handleAnalyze}
@@ -521,50 +711,221 @@ export default function SeatGenius() {
   );
 }
 
-function EventsView({
-  events,
-  loading,
+function DiscoverView({
+  query,
+  setQuery,
+  onSearch,
+  onClear,
+  searched,
+  results,
+  searching,
+  trending,
+  loadingTrending,
   error,
   onSelect,
 }: {
-  events: Event[];
-  loading: boolean;
+  query: string;
+  setQuery: (q: string) => void;
+  onSearch: (q: string) => void;
+  onClear: () => void;
+  searched: string | null;
+  results: Event[];
+  searching: boolean;
+  trending: Event[];
+  loadingTrending: boolean;
   error: string | null;
   onSelect: (e: Event) => void;
 }) {
   return (
     <>
-      <div className="mb-6">
-        <h2 className="text-2xl text-white">Chicago Cubs Home Games</h2>
+      <div className="mb-8">
+        <h2 className="text-2xl text-white">
+          When should you buy your next ticket?
+        </h2>
         <p className="mt-1 text-sm text-slate-400">
-          Upcoming games at Wrigley Field
+          Search any artist, team, or show. We track prices over time and tell
+          you whether to buy now or wait.
         </p>
+        <form
+          className="mt-5 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSearch(query);
+          }}
+        >
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Try “Bad Bunny”, “Lakers”, “Wicked”…"
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/70 py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={searching || !query.trim()}
+            className="bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+          </Button>
+        </form>
       </div>
 
-      {loading && (
-        <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-4 text-sm text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-          Loading Cubs schedule…
-        </div>
-      )}
-
-      {!loading && events.length === 0 && !error && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-8 text-center text-sm italic text-slate-500">
-          No upcoming games found.
-        </div>
-      )}
-
-      {!loading && events.length > 0 && (
-        <div className="grid gap-3">
-          {events.map((ev) => (
-            <EventCard key={ev.id} event={ev} onSelect={onSelect} />
-          ))}
-        </div>
-      )}
-
       {error && (
-        <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {searching && <LoadingRow label={`Searching events for “${searched}”…`} />}
+
+      {!searching && searched && (
+        <>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg text-white">
+              Results for “{searched}”{" "}
+              <span className="text-sm text-slate-500">{results.length}</span>
+            </h3>
+            <button
+              onClick={onClear}
+              className="text-sm text-slate-400 hover:text-slate-200"
+            >
+              Clear
+            </button>
+          </div>
+          {results.length === 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-8 text-center text-sm italic text-slate-500">
+              No upcoming events found for that search.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {results.map((ev) => (
+                <EventCard key={ev.id} event={ev} onSelect={onSelect} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {!searched && (
+        <>
+          <div className="mb-4 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-blue-400" />
+            <h3 className="text-lg text-white">Trending nationwide</h3>
+          </div>
+          {loadingTrending && <LoadingRow label="Loading trending events…" />}
+          {!loadingTrending && (
+            <div className="grid gap-3">
+              {trending.map((ev) => (
+                <EventCard key={ev.id} event={ev} onSelect={onSelect} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function WatchView({
+  tracked,
+  loading,
+  onSelect,
+  onRefresh,
+}: {
+  tracked: TrackedEvent[];
+  loading: boolean;
+  onSelect: (e: Event) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl text-white">Price Watch</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Events we're tracking. Prices get logged automatically around the
+            clock — open one to see its curve and the buy-or-wait call.
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          className="text-sm text-slate-400 hover:text-slate-200"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {loading && <LoadingRow label="Loading your watchlist…" />}
+
+      {!loading && tracked.length === 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-10 text-center">
+          <BellPlus className="mx-auto h-8 w-8 text-slate-600" />
+          <p className="mt-3 text-sm text-slate-400">
+            Nothing tracked yet. Find an event in Discover and hit{" "}
+            <span className="text-slate-200">Track price</span> — we'll start
+            building its price history within the hour.
+          </p>
+        </div>
+      )}
+
+      {!loading && tracked.length > 0 && (
+        <div className="grid gap-3">
+          {tracked.map((t) => (
+            <Card
+              key={t.id}
+              className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700"
+            >
+              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    className={cn(
+                      "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                      metaFor(t.category).chip,
+                    )}
+                  >
+                    <CategoryIcon category={t.category} className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h4 className="truncate text-base text-white">{t.title}</h4>
+                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Calendar className="h-4 w-4" />
+                        {formatDate(t.datetime_local || undefined)}
+                      </span>
+                      {t.venue && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin className="h-4 w-4" />
+                          {t.venue}
+                          {t.city ? `, ${t.city}` : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  onClick={() =>
+                    onSelect({
+                      id: t.id,
+                      title: t.title,
+                      category: t.category || undefined,
+                      datetime_local: t.datetime_local || "",
+                      venue: t.venue || "",
+                      city: t.city || "",
+                      state: "",
+                      popularity: t.popularity ?? undefined,
+                      url: t.url || undefined,
+                    })
+                  }
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <LineChart className="h-4 w-4" />
+                  Price Trend
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </>
@@ -641,7 +1002,7 @@ function LocalEventsView({
                       : "border-slate-700 bg-slate-900/50 text-slate-400 hover:text-slate-200",
                   )}
                 >
-                  {c === "All" ? "All" : categoryMeta[c as LocalCategory].label}
+                  {c === "All" ? "All" : metaFor(c).label}
                   <span className="text-slate-500">{count}</span>
                 </button>
               );
@@ -655,11 +1016,9 @@ function LocalEventsView({
                   <div className="mb-3 flex items-center gap-2">
                     <CategoryIcon
                       category={cat}
-                      className={cn("h-5 w-5", categoryMeta[cat].accent)}
+                      className={cn("h-5 w-5", metaFor(cat).accent)}
                     />
-                    <h3 className="text-lg text-white">
-                      {categoryMeta[cat].label}
-                    </h3>
+                    <h3 className="text-lg text-white">{metaFor(cat).label}</h3>
                     <span className="text-sm text-slate-500">
                       {grouped[cat].length}
                     </span>
@@ -686,11 +1045,6 @@ function LocalEventsView({
 }
 
 function LocalEventCard({ event }: { event: LocalEvent }) {
-  const cat = (
-    (LOCAL_CATEGORIES as readonly string[]).includes(event.category)
-      ? event.category
-      : "Sports"
-  ) as LocalCategory;
   const priceLabel = event.lowest_price
     ? `from $${event.lowest_price}`
     : event.average_price
@@ -705,10 +1059,10 @@ function LocalEventCard({ event }: { event: LocalEvent }) {
             <span
               className={cn(
                 "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-                categoryMeta[cat].chip,
+                metaFor(event.category).chip,
               )}
             >
-              <CategoryIcon category={cat} className="h-4 w-4" />
+              <CategoryIcon category={event.category} className="h-4 w-4" />
             </span>
             <div className="min-w-0">
               <h4 className="truncate text-base text-white">{event.title}</h4>
@@ -765,7 +1119,6 @@ function EventCard({
 }) {
   const demand = demandFromPopularity(event.popularity);
   const score = dealScore(event);
-  const value = useMemo(() => calculateValueScore(event), [event]);
   const priceLabel = event.lowest_price
     ? `from $${event.lowest_price}`
     : event.average_price
@@ -777,20 +1130,32 @@ function EventCard({
       <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
         <div className="min-w-0 space-y-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="truncate text-xl text-white">
-                {event.short_title || event.title}
-              </h3>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  {formatDate(event.datetime_local)}
-                  {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4" />
-                  {event.venue}, {event.city}
-                </span>
+            <div className="flex min-w-0 items-start gap-3">
+              <span
+                className={cn(
+                  "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border",
+                  metaFor(event.category).chip,
+                )}
+              >
+                <CategoryIcon category={event.category} className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="truncate text-xl text-white">
+                  {event.short_title || event.title}
+                </h3>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Calendar className="h-4 w-4" />
+                    {formatDate(event.datetime_local)}
+                    {formatTime(event.datetime_local) &&
+                      ` • ${formatTime(event.datetime_local)}`}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" />
+                    {event.venue}
+                    {event.city ? `, ${event.city}` : ""}
+                  </span>
+                </div>
               </div>
             </div>
             {demand && (
@@ -822,8 +1187,6 @@ function EventCard({
               )}
             </div>
           )}
-
-          <ValueMeter score={value.score} breakdown={value.breakdown} />
         </div>
 
         <div className="flex md:flex-col md:justify-center">
@@ -831,8 +1194,8 @@ function EventCard({
             onClick={() => onSelect(event)}
             className="flex-1 bg-blue-600 text-white hover:bg-blue-700 md:flex-initial"
           >
-            <Sparkles className="h-4 w-4" />
-            Analyze Deal
+            <Clock className="h-4 w-4" />
+            When to Buy
           </Button>
         </div>
       </CardContent>
@@ -840,88 +1203,157 @@ function EventCard({
   );
 }
 
-type FactorLabel = { text: string; color: string };
+const verdictStyles: Record<
+  BuyVerdict["action"],
+  { border: string; bg: string; title: string; badge: string; label: string }
+> = {
+  buy: {
+    border: "border-emerald-500/30",
+    bg: "bg-emerald-500/10",
+    title: "text-emerald-300",
+    badge: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200",
+    label: "Buy now",
+  },
+  soon: {
+    border: "border-blue-500/30",
+    bg: "bg-blue-500/10",
+    title: "text-blue-300",
+    badge: "border-blue-500/40 bg-blue-500/15 text-blue-200",
+    label: "Buy soon",
+  },
+  wait: {
+    border: "border-amber-500/30",
+    bg: "bg-amber-500/10",
+    title: "text-amber-300",
+    badge: "border-amber-500/40 bg-amber-500/15 text-amber-200",
+    label: "Wait",
+  },
+  track: {
+    border: "border-purple-500/30",
+    bg: "bg-purple-500/10",
+    title: "text-purple-300",
+    badge: "border-purple-500/40 bg-purple-500/15 text-purple-200",
+    label: "Track it",
+  },
+};
 
-function demandFactor(s: number): FactorLabel {
-  if (s >= 75) return { text: "Low demand", color: "text-emerald-400" };
-  if (s >= 50) return { text: "Moderate demand", color: "text-slate-400" };
-  if (s >= 25) return { text: "High demand", color: "text-orange-400" };
-  return { text: "Very high demand", color: "text-red-400" };
-}
+const factorToneClass: Record<string, string> = {
+  good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  neutral: "border-slate-600/40 bg-slate-500/10 text-slate-300",
+  bad: "border-orange-500/30 bg-orange-500/10 text-orange-300",
+};
 
-function dayFactor(s: number): FactorLabel {
-  if (s >= 80) return { text: "Weekday", color: "text-emerald-400" };
-  if (s >= 40) return { text: "Friday", color: "text-slate-400" };
-  return { text: "Weekend", color: "text-red-400" };
-}
-
-function timeFactor(s: number): FactorLabel {
-  if (s >= 80) return { text: "Day game", color: "text-emerald-400" };
-  return { text: "Night game", color: "text-orange-400" };
-}
-
-function opponentFactor(s: number): FactorLabel {
-  if (s >= 60) return { text: "Standard opponent", color: "text-emerald-400" };
-  if (s >= 30) return { text: "Strong draw", color: "text-orange-400" };
-  return { text: "Rival matchup", color: "text-red-400" };
-}
-
-function ValueMeter({
-  score,
-  breakdown,
+function BuyTimingCard({
+  verdict,
+  isTracked,
+  trackBusy,
+  onToggleTrack,
 }: {
-  score: number;
-  breakdown: ValueScoreBreakdown;
+  verdict: BuyVerdict;
+  isTracked: boolean;
+  trackBusy: boolean;
+  onToggleTrack: () => void;
 }) {
-  const labelColor =
-    score >= 67
-      ? "text-emerald-300"
-      : score >= 34
-        ? "text-yellow-300"
-        : "text-red-300";
-
-  const factors: FactorLabel[] = [
-    demandFactor(breakdown.demand),
-    dayFactor(breakdown.dayOfWeek),
-    timeFactor(breakdown.timeOfDay),
-    opponentFactor(breakdown.opponent),
-  ];
-
+  const s = verdictStyles[verdict.action];
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3">
-        <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500"
-            style={{
-              width: `${score}%`,
-              backgroundSize: `${10000 / Math.max(score, 1)}% 100%`,
-            }}
-          />
+    <Card className={cn("backdrop-blur-sm", s.border, s.bg)}>
+      <CardContent className="p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <Clock className={cn("h-5 w-5", s.title)} />
+              <span
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
+                  s.badge,
+                )}
+              >
+                {s.label}
+              </span>
+            </div>
+            <h3 className={cn("mt-3 text-2xl font-semibold", s.title)}>
+              {verdict.title}
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+              {verdict.detail}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {verdict.factors.map((f, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
+                    factorToneClass[f.tone],
+                  )}
+                >
+                  {f.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <Button
+            onClick={onToggleTrack}
+            disabled={trackBusy}
+            variant="outline"
+            className={cn(
+              "border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800",
+              isTracked && "border-emerald-500/40 text-emerald-300",
+            )}
+          >
+            {trackBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isTracked ? (
+              <BellRing className="h-4 w-4" />
+            ) : (
+              <BellPlus className="h-4 w-4" />
+            )}
+            {isTracked ? "Tracking prices" : "Track price"}
+          </Button>
         </div>
-        <span
-          className={cn(
-            "whitespace-nowrap text-xs font-medium tabular-nums",
-            labelColor,
-          )}
-        >
-          Value Score: {score}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-        {factors.map((f, i) => (
-          <span key={i} className="inline-flex items-center gap-2">
-            {i > 0 && <span className="text-slate-600">·</span>}
-            <span className={f.color}>{f.text}</span>
-          </span>
-        ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PriceHistoryCard({
+  readings,
+  isTracked,
+}: {
+  readings: Reading[];
+  isTracked: boolean;
+}) {
+  return (
+    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-white">
+          <LineChart className="h-5 w-5 text-blue-400" />
+          Get-In Price History
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {readings.length >= 2 ? (
+          <PriceChart readings={readings} />
+        ) : (
+          <p className="py-4 text-sm text-slate-500">
+            {isTracked
+              ? readings.length === 1
+                ? `One reading logged so far ($${readings[0].p}). The curve appears once we have a few more — readings land automatically every few hours.`
+                : "Tracking is on. The first price readings land automatically within a few hours — check back soon."
+              : "No price history yet. Hit “Track price” above and we'll start logging this event's cheapest ticket automatically, around the clock."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 function EventDetail({
   event,
+  verdict,
+  readings,
+  isTracked,
+  trackBusy,
+  onToggleTrack,
   listings,
   buyUrl,
   tmUrl,
@@ -936,6 +1368,11 @@ function EventDetail({
   onAnalyze,
 }: {
   event: Event;
+  verdict: BuyVerdict;
+  readings: Reading[];
+  isTracked: boolean;
+  trackBusy: boolean;
+  onToggleTrack: () => void;
   listings: Listing[];
   buyUrl: string | null;
   tmUrl: string | null;
@@ -960,16 +1397,26 @@ function EventDetail({
         className="text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
       >
         <ArrowLeft className="h-4 w-4" />
-        Cubs Schedule
+        Back
       </Button>
 
       <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
         <CardContent className="grid gap-6 p-8 md:grid-cols-[1fr_auto] md:items-center">
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="text-3xl text-white">
-                {event.short_title || event.title}
-              </h2>
+              <div className="flex min-w-0 items-start gap-3">
+                <span
+                  className={cn(
+                    "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border",
+                    metaFor(event.category).chip,
+                  )}
+                >
+                  <CategoryIcon category={event.category} className="h-5 w-5" />
+                </span>
+                <h2 className="text-3xl text-white">
+                  {event.short_title || event.title}
+                </h2>
+              </div>
               {demand && (
                 <Badge
                   variant="outline"
@@ -987,7 +1434,8 @@ function EventDetail({
               </span>
               <span className="inline-flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-slate-500" />
-                {event.venue}, {event.city}
+                {event.venue}
+                {event.city ? `, ${event.city}` : ""}
               </span>
             </div>
           </div>
@@ -1006,14 +1454,17 @@ function EventDetail({
       </Card>
 
       {loadingListings ? (
-        <LoadingRow label="Pulling live ticket prices…" />
+        <LoadingRow label="Pulling prices and trend data…" />
       ) : (
         <>
-          <ListingsCard
-            listings={listings}
-            buyUrl={buyUrl}
-            tmUrl={tmUrl}
+          <BuyTimingCard
+            verdict={verdict}
+            isTracked={isTracked}
+            trackBusy={trackBusy}
+            onToggleTrack={onToggleTrack}
           />
+          <PriceHistoryCard readings={readings} isTracked={isTracked} />
+          <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
           {platforms.length > 0 && (
             <PriceComparisonCard platforms={platforms} bestPlatform={bestPlatform} />
           )}
@@ -1040,13 +1491,13 @@ function EventDetail({
         ) : (
           <>
             <Sparkles className="h-4 w-4" />
-            Get AI Deal Analysis
+            Get AI Buy-Timing Analysis
           </>
         )}
       </Button>
 
       {analyzing && (
-        <LoadingRow label="AI is analyzing ticket prices and finding the best deal…" />
+        <LoadingRow label="AI is reading demand signals and price trends for this event…" />
       )}
 
       {result && (
@@ -1105,7 +1556,7 @@ function ListingsCard({
           </div>
         ) : (
           <p className="text-sm text-slate-500">
-            Live marketplace pricing isn't available for this game from our data partners yet. You can still check current prices directly:
+            Live marketplace pricing isn't available for this event from our data partners yet. You can still check current prices directly:
           </p>
         )}
 
@@ -1218,7 +1669,7 @@ function AnalysisCard({ text, eventTitle }: { text: string; eventTitle: string }
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-white">
           <Sparkles className="h-5 w-5 text-blue-400" />
-          AI Ticket Analysis: {eventTitle}
+          AI Buy-Timing Analysis: {eventTitle}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

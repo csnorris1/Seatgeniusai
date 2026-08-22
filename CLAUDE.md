@@ -11,15 +11,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming games from SeatGeek, view price tiers, and get AI-powered deal analysis via Claude.
+SeatGenius answers one question for **any live event** (concerts, sports, theater, comedy…): **when is the best time to buy a ticket?** Users search any artist/team/show, track events they care about, and the site builds each tracked event's resale price history automatically, turning it into a buy-now-or-wait verdict.
 
-**Frontend:** Single-page React 19 app (Vite 8, **TypeScript**, no router). All UI lives in `src/App.tsx` — team selection, event list, ticket listings, and AI analysis are rendered as state-driven views within one component. Styled with **Tailwind v4** (`@tailwindcss/vite`) + shadcn/ui components in `src/components/ui/`. Design tokens in `src/styles/theme.css` (shadcn palette, dark-themed by default via `.dark` class on root). The `@/*` path alias maps to `src/*`.
+**Frontend:** Single-page React 19 app (Vite 8, **TypeScript**, no router). Main UI lives in `src/App.tsx` (Discover search + trending, Price Watch watchlist, This Weekend in Chicago, event detail) as state-driven views in one component. The buy-timing verdict logic is `src/lib/buyTiming.ts` (pure, testable: demand × days-out × logged trend → buy/soon/wait/track). The price-history SVG chart is `src/components/PriceChart.tsx` (single blue series, hover crosshair + tooltip, dashed "typical price" reference line). Styled with **Tailwind v4** (`@tailwindcss/vite`) + shadcn/ui components in `src/components/ui/`. Design tokens in `src/styles/theme.css` (shadcn palette, dark-themed by default via `.dark` class on root). The `@/*` path alias maps to `src/*`.
 
 **Backend:** `api/search.js` is an AWS Lambda handler (`exports.handler`, CommonJS) deployed behind API Gateway at a hardcoded URL in `App.tsx` (`AWS_URL`). All actions route through `/search`:
-- `action=events&team=<name>` — search MLB events by team name keyword, enriched with Ticketmaster prices
-- `action=listings&event_id=<id>` — get price tiers (SeatGeek stats + Ticketmaster primary market) and buy URLs
+- `action=events&q=<query>` — search ALL event types; `action=events&team=<name>` keeps the legacy MLB-only behavior (deploy health check depends on it)
+- `action=trending` — top-scoring upcoming events nationwide (homepage)
+- `action=listings&event_id=<id>` — price tiers (SeatGeek stats + Ticketmaster primary market) and buy URLs
 - `action=compare&event_id=<id>` — multi-platform price comparison (SeatGeek + Ticketmaster live; StubHub/Vivid Seats pending)
-- `action=monitor` — hot deals across MLB, ranked by discount vs average price
+- `action=track/untrack/tracked` — the Price Watch watchlist (cap 25). Stored as ONE registry item in DynamoDB `seatgenius-price-history` (PK `event_id`='TRACKED', SK `date`='LIST', `events_json`)
+- `action=history&event_id=<id>` — logged price readings for an event (Query on PK; readings use full ISO timestamps in the `date` SK)
+- `action=wc_log` / `log_tracked` — the hourly price sweep (see below); `force=1` skips the cadence gate
+- `action=monitor` — legacy MLB hot-deals ranking
+
+**Price logging pipeline (the moat):** EventBridge rule `seatgenius-wc-log-hourly` (rate(1 hour), us-east-2) invokes the Lambda with `action=wc_log` — originally the World Cup logger, now the Price Watch sweep (the 2026 WC is over; `wc_refresh`/`wc_history` remain for the archived WC page). Each tracked event is priced via ONE batched Claude web-search call on a cadence tied to closeness (hourly ≤48h out, 3-hourly ≤7d, 6-hourly ≤30d, else daily 12:00 UTC), max 10 events per sweep (cost cap), one timestamped reading per event written to `seatgenius-price-history`. Claude web search is the price source because SeatGeek's free tier returns no price stats and the Ticketmaster key 401s.
 
 **AI Analysis:** The frontend calls the Anthropic API directly (no backend proxy) to analyze ticket listings with Claude. The prompt asks for 4 numbered sections — **Demand verdict**, **Best value pick**, **Price check suggestion**, **Final verdict** — and `parseAnalysis()` in `App.tsx` splits the response into color-coded `InsightBlock` cards (emerald/emerald/amber/blue). If parsing fails, it falls back to flat pre-wrapped text. **If you change the prompt's section structure, update `parseAnalysis` too** — it tolerates `**N. Title**`, `N. **Title**`, and `N. Title` header formats but assumes 4 numbered sections.
 
@@ -36,10 +42,10 @@ SeatGenius is an MLB ticket deal finder. Users pick a team, browse upcoming game
 
 ## Product Roadmap
 
-- Current: MLB only, SeatGeek data for schedule + prices, multi-platform comparison UI, hot deals monitor
-- Next: Apply to affiliate programs (StubHub, Vivid Seats) for live resale data
-- Goal: Show side-by-side primary vs secondary market prices so users find the true best deal
-- Future: Expand to NBA, NFL, concerts
+- Current: all-event search (SeatGeek discovery), Price Watch tracking + automatic resale price logging (Claude web search → DynamoDB), buy-now-or-wait verdicts from trend + demand + days-out patterns, AI buy-timing analysis
+- Next: Apply to affiliate programs (StubHub, Vivid Seats) for live resale data feeds (replaces web-search pricing)
+- Goal: Own enough price-curve history per event category to predict the cheapest buying window before it happens
+- Future: alerts (email/push) when a tracked event's price hits its predicted bottom
 
 ## Deployment
 

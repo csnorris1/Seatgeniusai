@@ -33,3 +33,6 @@ figma-export/node_modules
 figma-export/dist
 figma-export/.next
 figma-export/.vite
+
+# Local Claude Code settings (machine-specific, not for the public repo)
+.claude/settings.local.json

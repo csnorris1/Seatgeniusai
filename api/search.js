@@ -54,7 +54,7 @@ exports.handler = async (event) => {
         ? keyword.split(' at ').pop().trim()
         : keyword;
 
-      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(homeTeam)}&classificationName=Baseball&size=10&sort=date,asc`;
+      let url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(homeTeam)}&size=10&sort=date,asc`;
       if (date) url += `&startDateTime=${date}T00:00:00Z&endDateTime=${date}T23:59:59Z`;
       const response = await fetch(url);
       if (!response.ok) return null;
@@ -95,41 +95,155 @@ exports.handler = async (event) => {
     }
   }
 
+  // Map SeatGeek's granular event type to a friendly category label. Shared by
+  // the search, trending, and local actions.
+  const SPORT_WORDS = ['mlb','nba','nfl','nhl','mls','soccer','baseball','softball',
+    'basketball','football','hockey','tennis','golf','racing','wrestling','boxing',
+    'mma','ufc','volleyball','lacrosse','rugby','wnba'];
+  const categoryOf = (e) => {
+    const t = (e.type || '').toLowerCase();
+    const has = (...words) => words.some(w => t.includes(w));
+    if (has('concert','music_festival','festival')) return 'Concerts';
+    if (has('comedy')) return 'Comedy';
+    if (has('theater','theatre','broadway','musical','play')) return 'Theater';
+    if (has('dance','classical','ballet','opera','symphony')) return 'Arts';
+    if (SPORT_WORDS.some(w => t.includes(w))) return 'Sports';
+    const tax = (e.taxonomies || []).find(x => x && x.name);
+    if (tax) {
+      const n = tax.name.toLowerCase();
+      if (n.includes('sport')) return 'Sports';
+      if (n.includes('concert') || n.includes('music')) return 'Concerts';
+      if (n.includes('theater') || n.includes('theatre')) return 'Theater';
+      if (n.includes('comedy')) return 'Comedy';
+    }
+    return 'Other';
+  };
+
+  const mapSgEvent = (e) => {
+    const homeTeam = e.performers?.find(p => p.home_team);
+    const awayTeam = e.performers?.find(p => p.away_team);
+    const providerLinks = (e.links || [])
+      .filter(l => ['stubhub', 'vividseats'].includes(l.provider))
+      .map(l => ({ provider: l.provider, id: l.id }));
+    return {
+      id: e.id,
+      title: e.title,
+      short_title: e.short_title,
+      category: categoryOf(e),
+      type: e.type || null,
+      datetime_local: e.datetime_local,
+      venue: e.venue?.name,
+      city: e.venue?.city,
+      state: e.venue?.state,
+      venue_capacity: e.venue?.capacity || null,
+      popularity: e.popularity || null,
+      score: e.score || 0,
+      home_team: homeTeam?.short_name || homeTeam?.name || null,
+      away_team: awayTeam?.short_name || awayTeam?.name || null,
+      lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
+      average_price: e.stats?.average_price || null,
+      highest_price: e.stats?.highest_price || null,
+      listing_count: e.stats?.listing_count || null,
+      provider_links: providerLinks,
+      image: e.performers?.[0]?.image || null,
+      url: e.url,
+    };
+  };
+
+  // ---- Price Watch: track any event and build its price history ----------
+  // The watchlist lives as a single registry item in the existing
+  // `seatgenius-price-history` table (PK event_id='TRACKED', SK date='LIST',
+  // events_json = JSON array). Price readings for a tracked event are rows
+  // keyed by the event's id with the SK holding a full ISO timestamp, so
+  // sub-daily readings sort correctly. The hourly EventBridge rule that used
+  // to feed the (now finished) World Cup pipeline drives the sweep.
+
+  const priceHistoryTools = () => {
+    const { DynamoDBClient, PutItemCommand, GetItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
+    const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
+    const ddb = new DynamoDBClient({});
+    const TABLE = process.env.PRICE_HISTORY_TABLE || 'seatgenius-price-history';
+
+    const getTracked = async () => {
+      try {
+        const out = await ddb.send(new GetItemCommand({
+          TableName: TABLE,
+          Key: marshall({ event_id: 'TRACKED', date: 'LIST' }),
+        }));
+        if (!out.Item) return [];
+        const row = unmarshall(out.Item);
+        const list = JSON.parse(row.events_json || '[]');
+        return Array.isArray(list) ? list : [];
+      } catch { return []; }
+    };
+
+    const putTracked = async (list) => {
+      await ddb.send(new PutItemCommand({
+        TableName: TABLE,
+        Item: marshall({
+          event_id: 'TRACKED',
+          date: 'LIST',
+          events_json: JSON.stringify(list),
+          updated_at: new Date().toISOString(),
+        }),
+      }));
+    };
+
+    const getHistory = async (eventId) => {
+      const out = await ddb.send(new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: 'event_id = :id',
+        ExpressionAttributeValues: marshall({ ':id': String(eventId) }),
+      }));
+      return (out.Items || [])
+        .map(it => unmarshall(it))
+        .filter(r => r.p != null || r.lowest_price != null)
+        .map(r => ({
+          t: r.date,
+          p: r.p ?? r.lowest_price,
+          avg: r.avg ?? r.average_price ?? null,
+        }))
+        .sort((a, b) => (a.t < b.t ? -1 : 1))
+        .slice(-120);
+    };
+
+    return { ddb, TABLE, marshall, unmarshall, PutItemCommand, getTracked, putTracked, getHistory };
+  };
+
+  // Compact plain-English trend summary used by the analyze prompt.
+  const summarizeHistory = (readings) => {
+    if (!readings || readings.length < 2) return null;
+    const first = readings[0], last = readings[readings.length - 1];
+    const pct = first.p ? Math.round(((last.p - first.p) / first.p) * 100) : 0;
+    const spanDays = Math.max(1, Math.round((new Date(last.t) - new Date(first.t)) / 864e5));
+    const lows = readings.map(r => r.p);
+    return `We have ${readings.length} logged price readings over the last ${spanDays} day(s): get-in price went from $${first.p} to $${last.p} (${pct >= 0 ? '+' : ''}${pct}%). Lowest logged: $${Math.min(...lows)}, highest: $${Math.max(...lows)}.`;
+  };
+
   try {
+    // Event search. `q` searches every event type (concerts, sports, theater…);
+    // the legacy `team` param keeps the old MLB-only behavior (the deploy
+    // workflow's health check and any old links depend on it).
     if (action === 'events') {
       const today = new Date().toISOString().split('T')[0];
+      const q = params.q || team;
+      const typeFilter = params.q ? '' : '&type=mlb';
       const response = await fetch(
-        `https://api.seatgeek.com/2/events?q=${encodeURIComponent(team)}&type=mlb&per_page=20&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
+        `https://api.seatgeek.com/2/events?q=${encodeURIComponent(q)}${typeFilter}&per_page=25&sort=datetime_local.asc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
       );
       const data = await response.json();
-      const events = (data.events || []).map(e => {
-        const homeTeam = e.performers?.find(p => p.home_team);
-        const awayTeam = e.performers?.find(p => p.away_team);
-        const providerLinks = (e.links || [])
-          .filter(l => ['stubhub', 'vividseats'].includes(l.provider))
-          .map(l => ({ provider: l.provider, id: l.id }));
-        return {
-          id: e.id,
-          title: e.title,
-          short_title: e.short_title,
-          datetime_local: e.datetime_local,
-          venue: e.venue?.name,
-          city: e.venue?.city,
-          state: e.venue?.state,
-          venue_capacity: e.venue?.capacity || null,
-          popularity: e.popularity || null,
-          score: e.score || 0,
-          home_team: homeTeam?.short_name || homeTeam?.name || null,
-          away_team: awayTeam?.short_name || awayTeam?.name || null,
-          lowest_price: e.stats?.lowest_price || e.stats?.lowest_sg_base_price || e.stats?.lowest_price_good_deals || null,
-          average_price: e.stats?.average_price || null,
-          highest_price: e.stats?.highest_price || null,
-          listing_count: e.stats?.listing_count || null,
-          provider_links: providerLinks,
-          url: e.url,
-        };
-      });
-      return respond(200, { events });
+      return respond(200, { events: (data.events || []).map(mapSgEvent) });
+    }
+
+    // Trending: the highest-scoring upcoming events nationwide, all categories.
+    // Powers the homepage before the user searches for anything.
+    if (action === 'trending') {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await fetch(
+        `https://api.seatgeek.com/2/events?per_page=20&sort=score.desc&datetime_utc.gte=${today}&client_id=${SEATGEEK_CLIENT_ID}`
+      );
+      const data = await response.json();
+      return respond(200, { events: (data.events || []).map(mapSgEvent) });
     }
 
     if (action === 'listings') {
@@ -361,31 +475,47 @@ exports.handler = async (event) => {
       const popNum = Number(d.popularity);
       const pop = d.popularity && Number.isFinite(popNum) ? popNum.toFixed(2) : 'N/A';
       const altSitesText = d.altSitesText || 'none available';
+      const matchup = d.homeTeam && d.homeTeam !== 'Unknown'
+        ? `\n**Home team:** ${d.homeTeam} | **Away team:** ${d.awayTeam || 'Unknown'}`
+        : '';
 
-      const prompt = `You are an expert MLB ticket deal analyst. Analyze this game and give a plain-English buying verdict.
+      // Pull any logged price history for this event so the verdict is grounded
+      // in our own trend data, not just a one-off web search.
+      let historyText = 'No logged price history for this event yet.';
+      if (d.event_id) {
+        try {
+          const t = priceHistoryTools();
+          const readings = await t.getHistory(d.event_id);
+          const s = summarizeHistory(readings);
+          if (s) historyText = s;
+        } catch { /* history is optional context */ }
+      }
 
-**Game:** ${d.title || 'Unknown'}
+      const prompt = `You are an expert live-event ticket analyst. Your job is to tell the user the BEST TIME TO BUY a ticket to this ${d.category || 'event'} — buy now, or wait — based on demand, timing patterns, and price trends.
+
+**Event:** ${d.title || 'Unknown'}
 **Date:** ${d.date || 'Unknown'} (${d.gameDay || 'Unknown'})
-**Venue:** ${d.venue || 'Unknown'} in ${d.city || ''}, ${d.state || ''}${cap}
-**Home team:** ${d.homeTeam || 'Unknown'} | **Away team:** ${d.awayTeam || 'Unknown'}
+**Venue:** ${d.venue || 'Unknown'} in ${d.city || ''}, ${d.state || ''}${cap}${matchup}
 **Demand level:** ${d.demandLevel || 'unknown'} (SeatGeek popularity score: ${pop})
 
-**Current SeatGeek price tiers:**
-${d.listingText || 'No price data available yet.'}
+**Current price tiers:**
+${d.listingText || 'No live price data available yet.'}
+
+**Our logged price trend:** ${historyText}
 
 **Also listed on:** ${altSitesText}
 
-Before answering, use the web_search tool (max 2-3 searches) to gather live context that affects ticket demand: notable player injuries or returns, recent team form/streaks, weather forecast for game day, rivalry or storyline context, and starting-pitcher news. Search for the most current information available. If a fact isn't available, skip it — do not speculate.
+Before answering, use the web_search tool (max 2-3 searches) to gather live context that affects demand and prices for this specific event: how well it is selling, current resale get-in prices and whether they're trending up or down, and any news driving demand (lineup/injury news for sports, tour hype or added dates for concerts, closing announcements for shows). If a fact isn't available, skip it — do not speculate.
 
-Then provide:
+Then provide exactly these 4 numbered sections:
 
-1. **Demand verdict** — one bold sentence like "High demand game — expect prices to rise" or "Low demand — deals are likely." Factor in the day of week (weekday vs weekend), matchup appeal, venue size, and the live context you found. Weave one specific fact from your web search into this verdict (e.g. "Judge on a 5-game HR streak", "rain forecast Saturday", "Skenes starting").
+1. **Demand verdict** — one bold sentence like "High demand — expect prices to rise" or "Soft demand — deals are coming." Factor in day of week, venue size, how far out the event is, and the live context you found. Weave in one specific fact from your web search.
 
-2. **Best value pick** — which tier and why, considering the demand level.
+2. **Price trend read** — what prices have been doing and what they'll likely do next, using our logged trend plus what you found online. Typical patterns: undersold events drop hard in the final 24-48 hours; high-demand events climb as the date nears.
 
-3. **Price check suggestion** — tell the user which other sites to compare prices on (mention ${altSitesText} by name). Be specific: "This game is also on StubHub and Vivid Seats — compare before buying."
+3. **Where to compare** — which sites to price-check before buying (mention ${altSitesText} by name when available, plus the big resale marketplaces).
 
-4. **Final verdict** — 1-2 punchy sentences. Be direct and opinionated. Should they buy now or wait?
+4. **Final verdict** — 1-2 punchy sentences: buy now or wait, and if wait, until when. Be direct and opinionated.
 
 Keep it concise and conversational. Bold the key insights.`;
 
@@ -417,9 +547,60 @@ Keep it concise and conversational. Bold the key insights.`;
           return respond(502, { error: aiData.error?.message || 'No analysis returned.' });
         }
         return respond(200, { analysis: finalText });
-      } catch (e) {
+      } catch {
         return respond(502, { error: 'AI analysis request failed.' });
       }
+    }
+
+    if (action === 'tracked') {
+      const t = priceHistoryTools();
+      const list = await t.getTracked();
+      return respond(200, { events: list, count: list.length, max: 25 });
+    }
+
+    if (action === 'track') {
+      if (!event_id || !params.title) return respond(400, { error: 'event_id and title are required' });
+      const t = priceHistoryTools();
+      const list = await t.getTracked();
+      if (list.some(e => String(e.id) === String(event_id))) {
+        return respond(200, { ok: true, already: true, count: list.length });
+      }
+      if (list.length >= 25) {
+        return respond(409, { error: 'Watchlist is full (25 events). Untrack something first.' });
+      }
+      list.push({
+        id: String(event_id),
+        title: params.title,
+        datetime_local: params.date || null,
+        venue: params.venue || null,
+        city: params.city || null,
+        category: params.category || null,
+        popularity: params.popularity ? Number(params.popularity) : null,
+        url: params.url || null,
+        tracked_at: new Date().toISOString(),
+      });
+      await t.putTracked(list);
+      return respond(200, { ok: true, count: list.length });
+    }
+
+    if (action === 'untrack') {
+      if (!event_id) return respond(400, { error: 'event_id is required' });
+      const t = priceHistoryTools();
+      const list = await t.getTracked();
+      const next = list.filter(e => String(e.id) !== String(event_id));
+      if (next.length !== list.length) await t.putTracked(next);
+      return respond(200, { ok: true, count: next.length });
+    }
+
+    if (action === 'history') {
+      if (!event_id) return respond(400, { error: 'event_id is required' });
+      const t = priceHistoryTools();
+      const [readings, list] = await Promise.all([t.getHistory(event_id), t.getTracked()]);
+      return respond(200, {
+        readings,
+        tracked: list.some(e => String(e.id) === String(event_id)),
+        at: new Date().toISOString(),
+      });
     }
 
     // World Cup live refresh. Results + standings come from openfootball's
@@ -491,7 +672,7 @@ Keep it concise and conversational. Bold the key insights.`;
         }
         standings = Object.entries(stand).map(([code, s]) => ({ code, grp: s.grp, pts: s.pts, pl: s.pl }));
         scores = played.sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 8).map((p) => ({ m: p.m, st: 'FT' }));
-      } catch (e) {
+      } catch {
         // openfootball unavailable — return prices only; bracket keeps its data.
       }
 
@@ -527,7 +708,7 @@ Keep it concise and conversational. Bold the key insights.`;
               if (typeof parsed.note === 'string') note = parsed.note;
             }
           }
-        } catch (e) {
+        } catch {
           // price lookup failed — return the bracket data without prices.
         }
       }
@@ -536,73 +717,59 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, { text: JSON.stringify(out) });
     }
 
-    // Central World Cup price logger. Invoked hourly by an EventBridge schedule
-    // (not the public UI). Reads the bracket (openfootball) to find remaining
-    // knockout matches and each one's kickoff time, decides which are "active"
-    // by how close kickoff is, asks Claude for their resale get-in prices in ONE
-    // batched call, and writes a timestamped reading per match to DynamoDB — so
-    // the price curve, and especially the day-of drop, builds on its own with no
-    // user visit. Cadence: every remaining game is priced every few hours (so a
-    // real curve builds within a day); games in their final 24h are priced hourly.
-    if (action === 'wc_log') {
-      const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
-      const { marshall } = require('@aws-sdk/util-dynamodb');
-      const ddb = new DynamoDBClient({});
-      const TABLE = process.env.WC_PRICES_TABLE || 'seatgenius-wc-prices';
-
+    // Hourly price sweep. The EventBridge rule `seatgenius-wc-log-hourly`
+    // (rate(1 hour)) still invokes action=wc_log — originally the World Cup
+    // logger. The 2026 World Cup is over, so this action is now the Price
+    // Watch sweep: each tracked event gets priced on a cadence tied to how
+    // close it is (hourly inside 48h, every 3h inside a week, every 6h inside
+    // a month, daily at 12:00 UTC beyond that), via ONE batched Claude
+    // web-search call, with a timestamped reading per event written to
+    // DynamoDB. `action=log_tracked` triggers the same sweep manually;
+    // force=1 skips the cadence gate (used for seeding/testing).
+    if (action === 'wc_log' || action === 'log_tracked') {
+      const t = priceHistoryTools();
       const now = new Date();
-      const nowMs = now.getTime();
       const nowISO = now.toISOString();
-      const SWEEP_EVERY_HOURS = 3; // off-peak sweep cadence for games not yet in their final 24h
-
-      // Parse openfootball "date" + "time" (e.g. "2026-06-29" + "16:30 UTC-4")
-      // into a real UTC instant.
-      const kickoffUTC = (date, time) => {
-        if (!date || !time) return null;
-        const m = time.match(/^(\d{1,2}):(\d{2})\s*UTC([+-]\d{1,2})?/i);
-        if (!m) return null;
-        const hh = m[1].padStart(2, '0'), mm = m[2];
-        const off = m[3] ? parseInt(m[3], 10) : 0;
-        const sign = off < 0 ? '-' : '+';
-        const abs = String(Math.abs(off)).padStart(2, '0');
-        const d = new Date(`${date}T${hh}:${mm}:00${sign}${abs}:00`);
-        return isNaN(d.getTime()) ? null : d;
-      };
-
-      // 1) Remaining knockout matches that are in an active pricing window now.
-      let active = [];
-      try {
-        const ofRes = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
-        const of = await ofRes.json();
-        for (const mt of (of.matches || [])) {
-          const isGroup = typeof mt.group === 'string' && mt.group.startsWith('Group ');
-          if (isGroup || !mt.num) continue; // knockout only
-          const ft = (mt.score || {}).ft;
-          if (Array.isArray(ft) && ft.length >= 2) continue; // already has a result
-          const ko = kickoffUTC(mt.date, mt.time);
-          if (!ko) continue;
-          const hrs = (ko.getTime() - nowMs) / 3600000;
-          if (hrs <= 0) continue; // kickoff passed
-          // Active if within the final 24h (hourly) or it's an off-peak sweep hour.
-          if (!(hrs <= 24 || now.getUTCHours() % SWEEP_EVERY_HOURS === 0)) continue;
-          active.push({ num: mt.num, kickoff: ko.toISOString(), h: mt.team1 || null, a: mt.team2 || null });
-        }
-      } catch (e) {
-        return respond(502, { error: 'Bracket data unavailable' });
-      }
-
-      if (active.length === 0) {
-        return respond(200, { logged: 0, active: 0, note: 'No matches in an active pricing window this hour.' });
-      }
-
-      // 2) Price all active matches in ONE Claude web-search call.
       const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (!ANTHROPIC_API_KEY) return respond(500, { error: 'Pricing is not configured.' });
 
-      const wantList = active.map(a => a.num).join(',');
-      const prompt = `Search the web for current 2026 FIFA World Cup resale ticket prices. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"getin":[{"id":76,"p":1450,"avg":2200,"chg":-8}]}. For ONLY these match ids (${wantList}): "p" = current cheapest all-in resale price (get-in) in whole dollars; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping). Use resale trackers (Vivid Seats, SeatPick, TickPick, StubHub). For undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
+      // 1) Load the watchlist and prune events that already happened.
+      const list = await t.getTracked();
+      const upcoming = list.filter(e => {
+        if (!e.datetime_local) return true;
+        const dt = new Date(e.datetime_local);
+        return isNaN(dt.getTime()) || dt.getTime() > now.getTime() - 6 * 3600000;
+      });
+      if (upcoming.length !== list.length) await t.putTracked(upcoming);
 
-      let priced = {};
+      // 2) Which events are due for a reading this hour?
+      const h = now.getUTCHours();
+      const isDue = (e) => {
+        if (params.force === '1') return true;
+        if (!e.datetime_local) return h === 12;
+        const dt = new Date(e.datetime_local);
+        if (isNaN(dt.getTime())) return h === 12;
+        const hrsOut = (dt.getTime() - now.getTime()) / 3600000;
+        if (hrsOut <= 48) return true;
+        if (hrsOut <= 7 * 24) return h % 3 === 0;
+        if (hrsOut <= 30 * 24) return h % 6 === 0;
+        return h === 12;
+      };
+      const due = upcoming.filter(isDue).slice(0, 10); // cost cap: max 10 events per sweep
+
+      if (due.length === 0) {
+        return respond(200, { logged: 0, tracked: upcoming.length, note: 'No tracked events due this hour.' });
+      }
+
+      // 3) Price all due events in ONE Claude web-search call.
+      const lines = due.map(e => {
+        const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
+        const where = [e.venue, e.city].filter(Boolean).join(', ');
+        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when}`;
+      }).join('\n');
+      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping). Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+
+      const priced = {};
       try {
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -610,42 +777,42 @@ Keep it concise and conversational. Bold the key insights.`;
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 2000,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });
         const aiData = await aiRes.json();
+        if (aiData && aiData.error) {
+          return respond(502, { error: `Price lookup failed: ${aiData.error.message || 'API error'}` });
+        }
         const text = Array.isArray(aiData.content)
           ? aiData.content.filter(b => b.type === 'text').map(b => b.text).filter(Boolean).join('\n').trim()
           : '';
         const jm = text.match(/\{[\s\S]*\}/);
         if (jm) {
           const parsed = JSON.parse(jm[0]);
-          for (const g of (parsed.getin || [])) {
-            if (g && g.id != null) priced[g.id] = g;
-          }
+          for (const g of (parsed.prices || [])) if (g && g.id != null) priced[String(g.id)] = g;
         }
-      } catch (e) {
+      } catch {
         return respond(502, { error: 'Price lookup failed' });
       }
 
-      // 3) Write one timestamped reading per active match that got a price.
+      // 4) One timestamped reading per due event that got a price.
       let written = 0, noprice = 0;
-      for (const a of active) {
-        const g = priced[a.num];
+      for (const e of due) {
+        const g = priced[String(e.id)];
         if (!g || g.p == null) { noprice++; continue; }
-        const item = { event_id: `wc-${a.num}`, captured_at: nowISO, match: a.num, kickoff: a.kickoff, p: g.p };
+        const item = { event_id: String(e.id), date: nowISO, p: g.p, title: e.title };
         if (g.avg != null) item.avg = g.avg;
         if (g.chg != null) item.chg = g.chg;
-        if (a.h) item.h = a.h;
-        if (a.a) item.a = a.a;
+        if (e.datetime_local) item.event_date = e.datetime_local;
         try {
-          await ddb.send(new PutItemCommand({ TableName: TABLE, Item: marshall(item, { removeUndefinedValues: true }) }));
+          await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item, { removeUndefinedValues: true }) }));
           written++;
         } catch { noprice++; }
       }
 
-      return respond(200, { logged: written, active: active.length, no_price: noprice, at: nowISO });
+      return respond(200, { logged: written, due: due.length, tracked: upcoming.length, no_price: noprice, at: nowISO });
     }
 
     // Read-side for the World Cup card sparklines: returns each match's saved
@@ -670,7 +837,7 @@ Keep it concise and conversational. Bold the key insights.`;
           }
           ExclusiveStartKey = out.LastEvaluatedKey;
         } while (ExclusiveStartKey);
-      } catch (e) {
+      } catch {
         return respond(500, { error: 'history unavailable' });
       }
 
