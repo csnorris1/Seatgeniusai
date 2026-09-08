@@ -953,7 +953,7 @@ function DayStrip({
             onClick={() => onSelect(d)}
             aria-pressed={open}
             className={cn(
-              "flex min-w-[4.5rem] flex-1 flex-col items-center rounded-lg border px-2 py-2 text-center transition-colors",
+              "flex min-w-[3.6rem] flex-1 flex-col items-center rounded-lg border px-1 py-2 text-center transition-colors",
               open
                 ? "border-blue-400 bg-blue-50"
                 : "border-slate-200 bg-white hover:border-slate-400",
