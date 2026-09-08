@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
   BellPlus,
   BellRing,
   Calendar,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Drama,
   ExternalLink,
@@ -14,6 +22,7 @@ import {
   LineChart,
   Loader2,
   MapPin,
+  MousePointerClick,
   Music,
   Palette,
   Search,
@@ -21,6 +30,7 @@ import {
   Ticket,
   TrendingUp,
   Trophy,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -307,6 +317,61 @@ function InsightIcon({ tone, className }: { tone: InsightTone; className?: strin
   return <CheckCircle2 className={className} />;
 }
 
+// Matches Tailwind's `lg` breakpoint. Above it the event detail lives in a
+// sticky side panel; below it the detail expands inline under the tapped card.
+// Either way nothing ever navigates away from the one page.
+const DESKTOP_QUERY = "(min-width: 1024px)";
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+}
+
+const sameId = (a: string | number | null | undefined, b: string | number | null | undefined) =>
+  a != null && b != null && String(a) === String(b);
+
+const trackedToEvent = (t: TrackedEvent): Event => ({
+  id: t.id,
+  title: t.title,
+  category: t.category || undefined,
+  datetime_local: t.datetime_local || "",
+  venue: t.venue || "",
+  city: t.city || "",
+  state: "",
+  popularity: t.popularity ?? undefined,
+  url: t.url || undefined,
+});
+
+const localToEvent = (e: LocalEvent): Event => ({
+  id: e.id,
+  title: e.title,
+  category: e.category,
+  datetime_local: e.datetime_local,
+  venue: e.venue || "",
+  city: e.city || "",
+  state: e.state || "",
+  popularity: e.popularity,
+  lowest_price: e.lowest_price ?? undefined,
+  average_price: e.average_price ?? undefined,
+  url: e.url,
+});
+
+// Shared by every list on the page: which card is open, what to do on tap, and
+// the detail block to render under the open card on small screens.
+type ListProps = {
+  selectedId: string | number | null;
+  onSelect: (e: Event) => void;
+  inlineDetail: ReactNode;
+};
+
 export default function SeatGenius() {
   const [view, setView] = useState<"discover" | "watch" | "local">("discover");
 
@@ -387,6 +452,7 @@ export default function SeatGenius() {
   const runSearch = async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+    setView("discover");
     setSearching(true);
     setError(null);
     setSearched(trimmed);
@@ -410,7 +476,7 @@ export default function SeatGenius() {
     setQuery("");
   };
 
-  const selectEvent = async (event: Event) => {
+  const selectEvent = useCallback(async (event: Event) => {
     setSelectedEvent(event);
     setListings([]);
     setBuyUrl(null);
@@ -443,7 +509,18 @@ export default function SeatGenius() {
     } finally {
       setLoadingListings(false);
     }
-  };
+  }, []);
+
+  const isDesktop = useIsDesktop();
+
+  // On wide screens the side panel would otherwise sit empty on first load, so
+  // open the top trending event automatically (cheap: no Claude call involved).
+  const autoSelected = useRef(false);
+  useEffect(() => {
+    if (autoSelected.current || !isDesktop || trending.length === 0) return;
+    autoSelected.current = true;
+    selectEvent(trending[0]);
+  }, [isDesktop, trending, selectEvent]);
 
   const toggleTrack = async () => {
     if (!selectedEvent || trackBusy) return;
@@ -573,6 +650,15 @@ export default function SeatGenius() {
     setReadings([]);
   };
 
+  // Tapping the open card again on a phone collapses it.
+  const handleSelect = (event: Event) => {
+    if (!isDesktop && sameId(selectedEvent?.id, event.id)) {
+      resetToEvents();
+      return;
+    }
+    selectEvent(event);
+  };
+
   const selectedScore = useMemo(
     () => (selectedEvent ? dealScore(selectedEvent) : null),
     [selectedEvent],
@@ -590,17 +676,62 @@ export default function SeatGenius() {
     [selectedEvent, readings],
   );
 
+  const selectedId = selectedEvent?.id ?? null;
+
+  const detail =
+    selectedEvent && verdict ? (
+      <EventDetail
+        event={selectedEvent}
+        verdict={verdict}
+        readings={readings}
+        isTracked={isTracked}
+        trackBusy={trackBusy}
+        onToggleTrack={toggleTrack}
+        listings={listings}
+        buyUrl={buyUrl}
+        tmUrl={tmUrl}
+        platforms={platforms}
+        bestPlatform={bestPlatform}
+        loadingListings={loadingListings}
+        analyzing={analyzing}
+        result={result}
+        error={detailError}
+        score={selectedScore}
+        onAnalyze={handleAnalyze}
+      />
+    ) : null;
+
+  // Small screens: the detail sits right under the open card. Wide screens:
+  // it lives in the side panel instead (see <aside> below).
+  const inlineDetail =
+    !isDesktop && detail ? (
+      <div className="-mt-1 rounded-b-xl border border-t-0 border-blue-500/30 bg-slate-950/60 p-3 sm:p-4">
+        {detail}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={resetToEvents}
+          className="mt-3 w-full text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
+        >
+          <X className="h-4 w-4" />
+          Close
+        </Button>
+      </div>
+    ) : null;
+
+  const listProps: ListProps = { selectedId, onSelect: handleSelect, inlineDetail };
+
   return (
     <div className="dark min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 font-sans">
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-5">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               <span className="text-white">SEAT</span>
               <span className="text-blue-500">GENIUS</span>
               <span className="text-blue-400">.</span>
             </h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-0.5 hidden text-sm text-slate-400 sm:block">
               Know the best time to buy tickets — to anything.
             </p>
           </div>
@@ -610,7 +741,8 @@ export default function SeatGenius() {
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
             >
               <Trophy className="h-4 w-4" />
-              World Cup 2026
+              <span className="hidden sm:inline">World Cup 2026</span>
+              <span className="sm:hidden">World Cup</span>
             </a>
             <Badge
               variant="outline"
@@ -623,22 +755,56 @@ export default function SeatGenius() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        {!selectedEvent && (
-          <>
-            <div className="mb-8 inline-flex rounded-lg border border-slate-800 bg-slate-900/50 p-1">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+        <section className="mb-6 max-w-3xl">
+          <h2 className="text-2xl text-white sm:text-3xl">
+            When should you buy your next ticket?
+          </h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Search any artist, team, or show. We track prices over time and tell
+            you whether to buy now or wait.
+          </p>
+          <form
+            className="mt-4 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              runSearch(query);
+            }}
+          >
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Try “Bad Bunny”, “Lakers”, “Wicked”…"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/70 py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={searching || !query.trim()}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+            </Button>
+          </form>
+        </section>
+
+        <div className="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,29rem)_minmax(0,1fr)]">
+          <div className="min-w-0">
+            <div className="mb-5 flex rounded-lg border border-slate-800 bg-slate-900/50 p-1">
               {(
                 [
                   ["discover", "Discover"],
                   ["watch", "Price Watch"],
-                  ["local", "This Weekend in Chicago"],
+                  ["local", "Chicago"],
                 ] as const
               ).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setView(key)}
                   className={cn(
-                    "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                     view === key
                       ? "bg-blue-600 text-white"
                       : "text-slate-400 hover:text-slate-100",
@@ -651,17 +817,14 @@ export default function SeatGenius() {
 
             {view === "discover" && (
               <DiscoverView
-                query={query}
-                setQuery={setQuery}
-                onSearch={runSearch}
-                onClear={clearSearch}
                 searched={searched}
                 results={results}
                 searching={searching}
                 trending={trending}
                 loadingTrending={loadingTrending}
                 error={error}
-                onSelect={selectEvent}
+                onClear={clearSearch}
+                {...listProps}
               />
             )}
 
@@ -669,8 +832,8 @@ export default function SeatGenius() {
               <WatchView
                 tracked={tracked}
                 loading={loadingTracked}
-                onSelect={selectEvent}
                 onRefresh={loadTracked}
+                {...listProps}
               />
             )}
 
@@ -679,99 +842,75 @@ export default function SeatGenius() {
                 events={localEvents}
                 loading={loadingLocal}
                 error={localError}
+                {...listProps}
               />
             )}
-          </>
-        )}
+          </div>
 
-        {selectedEvent && verdict && (
-          <EventDetail
-            event={selectedEvent}
-            verdict={verdict}
-            readings={readings}
-            isTracked={isTracked}
-            trackBusy={trackBusy}
-            onToggleTrack={toggleTrack}
-            listings={listings}
-            buyUrl={buyUrl}
-            tmUrl={tmUrl}
-            platforms={platforms}
-            bestPlatform={bestPlatform}
-            loadingListings={loadingListings}
-            analyzing={analyzing}
-            result={result}
-            error={detailError}
-            score={selectedScore}
-            onBack={resetToEvents}
-            onAnalyze={handleAnalyze}
-          />
-        )}
+          <aside className="hidden min-w-0 lg:block">
+            <div className="sticky top-[5.75rem] max-h-[calc(100vh-6.75rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {detail ?? <EmptyPanel />}
+            </div>
+          </aside>
+        </div>
       </main>
     </div>
   );
 }
 
+function EmptyPanel() {
+  return (
+    <Card className="border-dashed border-slate-800 bg-slate-900/30">
+      <CardContent className="flex flex-col items-center px-8 py-20 text-center">
+        <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-slate-800 bg-slate-900/70">
+          <MousePointerClick className="h-6 w-6 text-blue-400" />
+        </span>
+        <h3 className="mt-5 text-lg text-white">Pick an event to see when to buy</h3>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+          Its buy-or-wait call, price history, and the cheapest place to get
+          seats all show up right here — you never leave this page.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EventList({ events, selectedId, onSelect, inlineDetail }: ListProps & { events: Event[] }) {
+  return (
+    <div className="grid gap-3">
+      {events.map((ev) => {
+        const open = sameId(ev.id, selectedId);
+        return (
+          <Fragment key={ev.id}>
+            <EventCard event={ev} selected={open} onSelect={onSelect} />
+            {open && inlineDetail}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 function DiscoverView({
-  query,
-  setQuery,
-  onSearch,
-  onClear,
   searched,
   results,
   searching,
   trending,
   loadingTrending,
   error,
-  onSelect,
-}: {
-  query: string;
-  setQuery: (q: string) => void;
-  onSearch: (q: string) => void;
-  onClear: () => void;
+  onClear,
+  ...list
+}: ListProps & {
   searched: string | null;
   results: Event[];
   searching: boolean;
   trending: Event[];
   loadingTrending: boolean;
   error: string | null;
-  onSelect: (e: Event) => void;
+  onClear: () => void;
 }) {
   return (
     <>
-      <div className="mb-8">
-        <h2 className="text-2xl text-white">
-          When should you buy your next ticket?
-        </h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Search any artist, team, or show. We track prices over time and tell
-          you whether to buy now or wait.
-        </p>
-        <form
-          className="mt-5 flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSearch(query);
-          }}
-        >
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Try “Bad Bunny”, “Lakers”, “Wicked”…"
-              className="w-full rounded-lg border border-slate-700 bg-slate-900/70 py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={searching || !query.trim()}
-            className="bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
-          </Button>
-        </form>
-      </div>
-
       {error && (
         <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
@@ -799,11 +938,7 @@ function DiscoverView({
               No upcoming events found for that search.
             </div>
           ) : (
-            <div className="grid gap-3">
-              {results.map((ev) => (
-                <EventCard key={ev.id} event={ev} onSelect={onSelect} />
-              ))}
-            </div>
+            <EventList events={results} {...list} />
           )}
         </>
       )}
@@ -815,13 +950,7 @@ function DiscoverView({
             <h3 className="text-lg text-white">Trending nationwide</h3>
           </div>
           {loadingTrending && <LoadingRow label="Loading trending events…" />}
-          {!loadingTrending && (
-            <div className="grid gap-3">
-              {trending.map((ev) => (
-                <EventCard key={ev.id} event={ev} onSelect={onSelect} />
-              ))}
-            </div>
-          )}
+          {!loadingTrending && <EventList events={trending} {...list} />}
         </>
       )}
     </>
@@ -831,22 +960,22 @@ function DiscoverView({
 function WatchView({
   tracked,
   loading,
-  onSelect,
   onRefresh,
-}: {
+  ...list
+}: ListProps & {
   tracked: TrackedEvent[];
   loading: boolean;
-  onSelect: (e: Event) => void;
   onRefresh: () => void;
 }) {
+  const events = useMemo(() => tracked.map(trackedToEvent), [tracked]);
   return (
     <>
-      <div className="mb-6 flex items-end justify-between gap-4">
+      <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl text-white">Price Watch</h2>
+          <h2 className="text-xl text-white">Price Watch</h2>
           <p className="mt-1 text-sm text-slate-400">
             Events we're tracking. Prices get logged automatically around the
-            clock — open one to see its curve and the buy-or-wait call.
+            clock — tap one to see its curve and the buy-or-wait call.
           </p>
         </div>
         <button
@@ -870,64 +999,7 @@ function WatchView({
         </div>
       )}
 
-      {!loading && tracked.length > 0 && (
-        <div className="grid gap-3">
-          {tracked.map((t) => (
-            <Card
-              key={t.id}
-              className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700"
-            >
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className={cn(
-                      "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-                      metaFor(t.category).chip,
-                    )}
-                  >
-                    <CategoryIcon category={t.category} className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <h4 className="truncate text-base text-white">{t.title}</h4>
-                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calendar className="h-4 w-4" />
-                        {formatDate(t.datetime_local || undefined)}
-                      </span>
-                      {t.venue && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <MapPin className="h-4 w-4" />
-                          {t.venue}
-                          {t.city ? `, ${t.city}` : ""}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  onClick={() =>
-                    onSelect({
-                      id: t.id,
-                      title: t.title,
-                      category: t.category || undefined,
-                      datetime_local: t.datetime_local || "",
-                      venue: t.venue || "",
-                      city: t.city || "",
-                      state: "",
-                      popularity: t.popularity ?? undefined,
-                      url: t.url || undefined,
-                    })
-                  }
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <LineChart className="h-4 w-4" />
-                  Price Trend
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {!loading && events.length > 0 && <EventList events={events} {...list} />}
     </>
   );
 }
@@ -936,7 +1008,8 @@ function LocalEventsView({
   events,
   loading,
   error,
-}: {
+  ...list
+}: ListProps & {
   events: LocalEvent[];
   loading: boolean;
   error: string | null;
@@ -964,8 +1037,8 @@ function LocalEventsView({
 
   return (
     <>
-      <div className="mb-6">
-        <h2 className="text-2xl text-white">This Weekend in Chicago</h2>
+      <div className="mb-5">
+        <h2 className="text-xl text-white">This Weekend in Chicago</h2>
         <p className="mt-1 text-sm text-slate-400">
           Sporting events and concerts happening in the city over the next 7 days
         </p>
@@ -1023,11 +1096,7 @@ function LocalEventsView({
                       {grouped[cat].length}
                     </span>
                   </div>
-                  <div className="grid gap-3">
-                    {grouped[cat].map((ev) => (
-                      <LocalEventCard key={ev.id} event={ev} />
-                    ))}
-                  </div>
+                  <EventList events={grouped[cat].map(localToEvent)} {...list} />
                 </section>
               ),
             )}
@@ -1044,160 +1113,130 @@ function LocalEventsView({
   );
 }
 
-function LocalEventCard({ event }: { event: LocalEvent }) {
-  const priceLabel = event.lowest_price
-    ? `from $${event.lowest_price}`
-    : event.average_price
-      ? `~$${event.average_price}`
-      : null;
-
-  return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700">
-      <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-3">
-            <span
-              className={cn(
-                "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-                metaFor(event.category).chip,
-              )}
-            >
-              <CategoryIcon category={event.category} className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <h4 className="truncate text-base text-white">{event.title}</h4>
-              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  {formatDate(event.datetime_local)}
-                  {formatTime(event.datetime_local) &&
-                    ` • ${formatTime(event.datetime_local)}`}
-                </span>
-                {event.venue && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4" />
-                    {event.venue}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {priceLabel && (
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                Starting at
-              </div>
-              <div className="text-lg font-semibold text-white">{priceLabel}</div>
-            </div>
-          )}
-          {event.url && (
-            <Button
-              asChild
-              className="bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <a href={event.url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                Get Tickets
-              </a>
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
+// One row in any list. The whole card is the button: tap it and the event's
+// detail opens beside it (desktop) or beneath it (mobile). It also carries a
+// quick buy-or-wait chip computed from demand + days out, so the answer is
+// visible before anyone clicks anything.
 function EventCard({
   event,
+  selected,
   onSelect,
 }: {
   event: Event;
+  selected: boolean;
   onSelect: (e: Event) => void;
 }) {
   const demand = demandFromPopularity(event.popularity);
   const score = dealScore(event);
-  const priceLabel = event.lowest_price
-    ? `from $${event.lowest_price}`
-    : event.average_price
-      ? `~$${event.average_price}`
-      : null;
+  const quick = useMemo(
+    () =>
+      buyTiming({
+        datetime_local: event.datetime_local,
+        popularity: event.popularity,
+      }),
+    [event.datetime_local, event.popularity],
+  );
+  const v = verdictStyles[quick.action];
+  const time = formatTime(event.datetime_local);
 
   return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-700">
-      <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
-        <div className="min-w-0 space-y-4">
+    <Card
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={() => onSelect(event)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(event);
+        }
+      }}
+      className={cn(
+        "min-w-0 cursor-pointer border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+        selected &&
+          "border-blue-500/50 bg-blue-500/[0.06] hover:border-blue-500/60 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
+      )}
+    >
+      <CardContent className="flex items-start gap-3 p-4">
+        <span
+          className={cn(
+            "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+            metaFor(event.category).chip,
+          )}
+        >
+          <CategoryIcon category={event.category} className="h-4 w-4" />
+        </span>
+
+        <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <span
-                className={cn(
-                  "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border",
-                  metaFor(event.category).chip,
-                )}
-              >
-                <CategoryIcon category={event.category} className="h-5 w-5" />
+            <h3 className="min-w-0 text-base leading-snug text-white line-clamp-2 lg:truncate">
+              {event.short_title || event.title}
+            </h3>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                v.badge,
+              )}
+            >
+              {v.label}
+            </span>
+          </div>
+
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5" />
+              {formatDate(event.datetime_local)}
+              {time && ` • ${time}`}
+            </span>
+            {event.venue && (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {event.venue}
+                  {event.city ? `, ${event.city}` : ""}
+                </span>
               </span>
-              <div className="min-w-0">
-                <h3 className="truncate text-xl text-white">
-                  {event.short_title || event.title}
-                </h3>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Calendar className="h-4 w-4" />
-                    {formatDate(event.datetime_local)}
-                    {formatTime(event.datetime_local) &&
-                      ` • ${formatTime(event.datetime_local)}`}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4" />
-                    {event.venue}
-                    {event.city ? `, ${event.city}` : ""}
-                  </span>
-                </div>
-              </div>
-            </div>
-            {demand && (
-              <Badge variant="outline" className={cn("shrink-0", demandClasses[demand])}>
-                {demand} Demand
-              </Badge>
             )}
           </div>
 
-          {priceLabel && (
-            <div className="flex items-center gap-6">
-              <div>
-                <div className="text-xs text-slate-400">
-                  {event.lowest_price ? "Starting at" : "Average Price"}
-                </div>
-                <div className="text-2xl text-white">{priceLabel}</div>
-              </div>
+          {(demand || event.lowest_price || event.average_price || score != null) && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+              {demand && (
+                <Badge
+                  variant="outline"
+                  className={cn("px-2 py-0 text-[10px]", demandClasses[demand])}
+                >
+                  {demand} demand
+                </Badge>
+              )}
+              {event.lowest_price ? (
+                <span className="text-slate-400">
+                  From{" "}
+                  <span className="font-semibold text-white">${event.lowest_price}</span>
+                </span>
+              ) : event.average_price ? (
+                <span className="text-slate-400">
+                  Avg{" "}
+                  <span className="font-semibold text-white">${event.average_price}</span>
+                </span>
+              ) : null}
               {score != null && (
-                <>
-                  <div className="h-10 w-px bg-slate-700" />
-                  <div>
-                    <div className="text-xs text-slate-400">Deal Score</div>
-                    <div className={cn("text-2xl", scoreClass(score))}>
-                      {score}
-                      <span className="text-sm text-slate-500">/100</span>
-                    </div>
-                  </div>
-                </>
+                <span className="text-slate-400">
+                  Deal{" "}
+                  <span className={cn("font-semibold", scoreClass(score))}>{score}</span>
+                  <span className="text-slate-600">/100</span>
+                </span>
               )}
             </div>
           )}
         </div>
 
-        <div className="flex md:flex-col md:justify-center">
-          <Button
-            onClick={() => onSelect(event)}
-            className="flex-1 bg-blue-600 text-white hover:bg-blue-700 md:flex-initial"
-          >
-            <Clock className="h-4 w-4" />
-            When to Buy
-          </Button>
-        </div>
+        <ChevronRight
+          className={cn(
+            "mt-1 h-4 w-4 shrink-0 text-slate-600 transition-transform",
+            selected && "rotate-90 text-blue-400 lg:rotate-0",
+          )}
+        />
       </CardContent>
     </Card>
   );
@@ -1364,7 +1403,6 @@ function EventDetail({
   result,
   error,
   score,
-  onBack,
   onAnalyze,
 }: {
   event: Event;
@@ -1383,26 +1421,17 @@ function EventDetail({
   result: string | null;
   error: string | null;
   score: number | null;
-  onBack: () => void;
   onAnalyze: () => void;
 }) {
   const demand = demandFromPopularity(event.popularity);
 
   return (
-    <div className="space-y-5">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onBack}
-        className="text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </Button>
-
-      <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
-        <CardContent className="grid gap-6 p-8 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="space-y-4">
+    <div className="space-y-4">
+      {/* Title header: desktop only. On phones the detail sits directly under
+          the card that already shows the title, so repeating it is noise. */}
+      <Card className="hidden border-slate-800 bg-slate-900/50 backdrop-blur-sm lg:block">
+        <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
+          <div className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
                 <span
@@ -1413,20 +1442,20 @@ function EventDetail({
                 >
                   <CategoryIcon category={event.category} className="h-5 w-5" />
                 </span>
-                <h2 className="text-3xl text-white">
+                <h2 className="text-2xl text-white">
                   {event.short_title || event.title}
                 </h2>
               </div>
               {demand && (
                 <Badge
                   variant="outline"
-                  className={cn("px-3 py-1 text-sm", demandClasses[demand])}
+                  className={cn("shrink-0 px-3 py-1 text-sm", demandClasses[demand])}
                 >
                   {demand} Demand
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap gap-4 text-slate-300">
+            <div className="flex flex-wrap gap-4 text-sm text-slate-300">
               <span className="inline-flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-slate-500" />
                 {formatDate(event.datetime_local)}
