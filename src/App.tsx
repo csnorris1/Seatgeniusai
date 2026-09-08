@@ -365,8 +365,13 @@ const trackedToEvent = (t: TrackedEvent): Event => ({
 // Ticket types a person can choose to track, by event category. "" means
 // "cheapest available" (the pre-tier behaviour). Golf/tennis/festival-style
 // events get grounds vs hospitality; seated venues get level choices.
-function tierOptionsFor(category?: string | null, title?: string): string[] {
+function tierOptionsFor(category?: string | null, title?: string, venue?: string): string[] {
   const t = (title || "").toLowerCase();
+  const v = (venue || "").toLowerCase();
+  // Tennis stadium sessions (US Open at Ashe/Armstrong) sell by level, not
+  // by grounds pass — and "US Open" would otherwise match the golf rule below.
+  if (/tennis/.test(t) || /arthur ashe|louis armstrong/.test(v)) return ["Promenade", "Loge", "Courtside"];
+  if (/grounds admission|grounds pass/.test(t)) return ["Grounds pass"];
   const openGrounds = /golf|cup|open|championship|invitational|classic|masters|festival|fest\b|grand prix|marathon/.test(t);
   if (category === "Sports" && openGrounds) return ["Grounds pass", "Hospitality"];
   if (category === "Sports") return ["Upper level", "Lower level", "Club or suite"];
@@ -736,7 +741,7 @@ export default function SeatGenius() {
         trackBusy={trackBusy}
         onToggleTrack={toggleTrack}
         tier={tier}
-        tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title)}
+        tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title, selectedEvent.venue)}
         onTierChange={setTier}
         siblings={siblings}
         onSelectSibling={(t) => selectEvent(trackedToEvent(t))}

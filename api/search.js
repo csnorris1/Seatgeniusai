@@ -573,9 +573,13 @@ Keep it concise and conversational. Bold the key insights.`;
       // tier on an existing entry starts a fresh curve (readings carry tier).
       // group = key shared by the days of a multi-day event (a golf
       // tournament, a festival) so the UI can show them side by side.
+      // label = short human name for one session of a multi-session event
+      // ("Night · Quarterfinals", "Women's final"). Shown on the session chips
+      // and passed to the sweep so Claude prices the right session.
       const wantPriority = params.priority === '1';
       const tier = (params.tier || '').trim().slice(0, 40) || null;
       const group = (params.group || '').trim().slice(0, 60) || null;
+      const label = (params.label || '').trim().slice(0, 60) || null;
       const existing = list.find(e => String(e.id) === String(event_id));
       if (existing) {
         let changed = false;
@@ -583,8 +587,9 @@ Keep it concise and conversational. Bold the key insights.`;
         else if (params.priority === '0' && existing.priority) { delete existing.priority; changed = true; }
         if (params.tier != null && (existing.tier || null) !== tier) { if (tier) existing.tier = tier; else delete existing.tier; changed = true; }
         if (params.group != null && (existing.group || null) !== group) { if (group) existing.group = group; else delete existing.group; changed = true; }
+        if (params.label != null && (existing.label || null) !== label) { if (label) existing.label = label; else delete existing.label; changed = true; }
         if (changed) await t.putTracked(list);
-        return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority), tier: existing.tier || null, group: existing.group || null });
+        return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority), tier: existing.tier || null, group: existing.group || null, label: existing.label || null });
       }
       if (list.length >= 25) {
         return respond(409, { error: 'Watchlist is full (25 events). Untrack something first.' });
@@ -602,9 +607,10 @@ Keep it concise and conversational. Bold the key insights.`;
         ...(wantPriority ? { priority: true } : {}),
         ...(tier ? { tier } : {}),
         ...(group ? { group } : {}),
+        ...(label ? { label } : {}),
       });
       await t.putTracked(list);
-      return respond(200, { ok: true, count: list.length, priority: wantPriority, tier, group });
+      return respond(200, { ok: true, count: list.length, priority: wantPriority, tier, group, label });
     }
 
     if (action === 'untrack') {
@@ -629,6 +635,7 @@ Keep it concise and conversational. Bold the key insights.`;
         tracked: Boolean(entry),
         tier: entry ? entry.tier || null : null,
         group: entry ? entry.group || null : null,
+        label: entry ? entry.label || null : null,
         priority: Boolean(entry && entry.priority),
         at: new Date().toISOString(),
       });
@@ -832,7 +839,17 @@ Keep it concise and conversational. Bold the key insights.`;
         if (hrsOut <= 30 * 24) return h % 6 === 0;
         return h === 12;
       };
-      const due = upcoming.filter(isDue).slice(0, 10); // cost cap: max 10 events per sweep
+      // Cost cap: max 10 events per sweep. When more are due, the closest
+      // events win (deep-watch first), so a tournament's next session is never
+      // starved by things weeks out that merely share the hour.
+      const hoursOut = (e) => {
+        const dt = e.datetime_local ? new Date(e.datetime_local).getTime() : NaN;
+        return isNaN(dt) ? Infinity : (dt - now.getTime()) / 3600000;
+      };
+      const due = upcoming
+        .filter(isDue)
+        .sort((a, b) => (Number(Boolean(b.priority)) - Number(Boolean(a.priority))) || (hoursOut(a) - hoursOut(b)))
+        .slice(0, 10);
 
       if (due.length === 0) {
         return respond(200, { logged: 0, tracked: upcoming.length, note: 'No tracked events due this hour.' });
@@ -846,13 +863,17 @@ Keep it concise and conversational. Bold the key insights.`;
         const where = [e.venue, e.city].filter(Boolean).join(', ');
         const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
         const tier = e.tier ? ` — ticket type: ${e.tier} ONLY` : '';
-        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when} (this specific date only)${tier}${tag}`;
+        // Session time + label matter when a venue hosts two sessions a day
+        // (a tennis day session and night session are different tickets).
+        const hhmm = e.datetime_local && /T\d{2}:\d{2}/.test(e.datetime_local) ? ` ${e.datetime_local.slice(11, 16)} local` : '';
+        const label = e.label ? ` (${e.label})` : '';
+        return `- id ${e.id}: ${e.title}${label}${where ? ` at ${where}` : ''} on ${when}${hhmm} (this specific date and session only)${tier}${tag}`;
       }).join('\n');
       const deepRule = deep
         ? ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for that event and ticket type, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.'
         : '';
       const tierRule = due.some(e => e.tier)
-        ? ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club.'
+        ? ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club; "Promenade" means Arthur Ashe Stadium upper Promenade seats, never Loge or Courtside; "Loge" means the middle Loge level only.'
         : '';
       const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${tierRule}${deepRule} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
 
