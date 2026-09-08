@@ -204,6 +204,7 @@ exports.handler = async (event) => {
           avg: r.avg ?? r.average_price ?? null,
           ...(Array.isArray(r.sites) && r.sites.length ? { sites: r.sites } : {}),
           ...(r.tier ? { tier: r.tier } : {}),
+          ...(r.matchup ? { matchup: r.matchup } : {}),
         }))
         .sort((a, b) => (a.t < b.t ? -1 : 1))
         .slice(-120);
@@ -636,6 +637,8 @@ Keep it concise and conversational. Bold the key insights.`;
         tier: entry ? entry.tier || null : null,
         group: entry ? entry.group || null : null,
         label: entry ? entry.label || null : null,
+        matchup: entry ? entry.matchup || null : null,
+        matchup_at: entry ? entry.matchup_at || null : null,
         priority: Boolean(entry && entry.priority),
         at: new Date().toISOString(),
       });
@@ -805,10 +808,12 @@ Keep it concise and conversational. Bold the key insights.`;
     // logger. The 2026 World Cup is over, so this action is now the Price
     // Watch sweep: each tracked event gets priced on a cadence tied to how
     // close it is (hourly inside 48h, every 3h inside a week, every 6h inside
-    // a month, daily at 12:00 UTC beyond that), via ONE batched Claude
-    // web-search call, with a timestamped reading per event written to
-    // DynamoDB. `action=log_tracked` triggers the same sweep manually;
-    // force=1 skips the cadence gate (used for seeding/testing).
+    // a month, daily at 12:00 UTC beyond that), via batched Claude
+    // web-search calls (8 events per call, at most 2 calls per sweep, run in
+    // parallel), with a timestamped reading per event written to DynamoDB.
+    // `action=log_tracked` triggers the same sweep manually; force=1 skips
+    // the cadence gate (used for seeding/testing). Use the Lambda Function
+    // URL for manual runs — a two-batch sweep can exceed the Gateway's 29s.
     if (action === 'wc_log' || action === 'log_tracked') {
       const t = priceHistoryTools();
       const now = new Date();
@@ -825,60 +830,100 @@ Keep it concise and conversational. Bold the key insights.`;
       });
       if (upcoming.length !== list.length) await t.putTracked(upcoming);
 
-      // 2) Which events are due for a reading this hour?
+      // 2) Which events are due for a reading this hour? Each event has a
+      // cadence interval (hours) tied to how close it is; deep watch is 2h.
       const h = now.getUTCHours();
+      const intervalOf = (e) => {
+        if (e.priority) return 2;
+        const dt = e.datetime_local ? new Date(e.datetime_local) : null;
+        if (!dt || isNaN(dt.getTime())) return 24;
+        const hrsOut = (dt.getTime() - now.getTime()) / 3600000;
+        if (hrsOut <= 48) return 1;
+        if (hrsOut <= 7 * 24) return 3;
+        if (hrsOut <= 30 * 24) return 6;
+        return 24;
+      };
       const isDue = (e) => {
         if (params.force === '1') return true;
-        if (e.priority) return h % 2 === 0; // deep watch: every 2 hours, regardless of days out
-        if (!e.datetime_local) return h === 12;
-        const dt = new Date(e.datetime_local);
-        if (isNaN(dt.getTime())) return h === 12;
-        const hrsOut = (dt.getTime() - now.getTime()) / 3600000;
-        if (hrsOut <= 48) return true;
-        if (hrsOut <= 7 * 24) return h % 3 === 0;
-        if (hrsOut <= 30 * 24) return h % 6 === 0;
-        return h === 12;
+        const iv = intervalOf(e);
+        return iv === 24 ? h === 12 : h % iv === 0;
       };
-      // Cost cap: max 10 events per sweep. When more are due, the closest
-      // events win (deep-watch first), so a tournament's next session is never
-      // starved by things weeks out that merely share the hour.
+      // Cost cap: at most two Claude calls of 8 events each per sweep (search
+      // quality drops past ~8 events per call). When more are due than fit,
+      // the most overdue events go first — how many of its own intervals an
+      // event has waited since its last reading — with closeness as the
+      // tiebreak. That keeps a tournament's hourly sessions from starving
+      // the events weeks out that happen to share the hour, and vice versa.
+      const BATCH = 8, MAX_BATCHES = 2;
       const hoursOut = (e) => {
         const dt = e.datetime_local ? new Date(e.datetime_local).getTime() : NaN;
         return isNaN(dt) ? Infinity : (dt - now.getTime()) / 3600000;
       };
+      const overdue = (e) => {
+        const last = e.last_at ? new Date(e.last_at).getTime() : NaN;
+        return isNaN(last) ? Infinity : (now.getTime() - last) / 3600000 / intervalOf(e);
+      };
       const due = upcoming
         .filter(isDue)
-        .sort((a, b) => (Number(Boolean(b.priority)) - Number(Boolean(a.priority))) || (hoursOut(a) - hoursOut(b)))
-        .slice(0, 10);
+        .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)))
+        .slice(0, BATCH * MAX_BATCHES);
 
       if (due.length === 0) {
         return respond(200, { logged: 0, tracked: upcoming.length, note: 'No tracked events due this hour.' });
       }
 
-      // 3) Price all due events in ONE Claude web-search call. Deep-watch
-      // events additionally get a per-marketplace breakdown ("sites").
-      const deep = due.some(e => e.priority);
-      const lines = due.map(e => {
-        const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
-        const where = [e.venue, e.city].filter(Boolean).join(', ');
-        const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
-        const tier = e.tier ? ` — ticket type: ${e.tier} ONLY` : '';
-        // Session time + label matter when a venue hosts two sessions a day
-        // (a tennis day session and night session are different tickets).
-        const hhmm = e.datetime_local && /T\d{2}:\d{2}/.test(e.datetime_local) ? ` ${e.datetime_local.slice(11, 16)} local` : '';
-        const label = e.label ? ` (${e.label})` : '';
-        return `- id ${e.id}: ${e.title}${label}${where ? ` at ${where}` : ''} on ${when}${hhmm} (this specific date and session only)${tier}${tag}`;
-      }).join('\n');
-      const deepRule = deep
-        ? ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for that event and ticket type, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.'
-        : '';
-      const tierRule = due.some(e => e.tier)
-        ? ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club; "Promenade" means Arthur Ashe Stadium upper Promenade seats, never Loge or Courtside; "Loge" means the middle Loge level only.'
-        : '';
-      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${tierRule}${deepRule} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+      // 3) Price the due events in batched Claude web-search calls (run in
+      // parallel — the Lambda has 90s). Deep-watch events additionally get a
+      // per-marketplace breakdown ("sites").
+      const tierRuleText = ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club; "Promenade" means Arthur Ashe Stadium upper Promenade seats, never Loge or Courtside; "Loge" means the middle Loge level only.';
+      const deepRuleText = ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for that event and ticket type, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.';
+      // Tournament sessions: two sessions a day are different tickets, and
+      // who is playing moves the price more than anything — capture it when
+      // it shows up while pricing, never by spending a search on it.
+      const sessionRuleText = ' For tournament sessions (tennis etc.): a day session and a night session on the same date are different tickets — price only the session whose number, start time and label are given, never a grounds pass or a different session. If the marketplace listing or the tournament schedule shows who is playing in that session, fill "matchup" (e.g. "Alcaraz vs Shelton; Pegula vs Navarro"); if the draw is not set yet, omit it. Do not spend a search just to find the matchup.';
+      const isSession = (e) => Boolean(e.group) && /session\s*\d+/i.test(e.title || '');
 
-      const priced = {};
-      try {
+      // Scan for the first balanced JSON object carrying a "prices" array;
+      // the answer can arrive split across text blocks with prose around it.
+      const parsePrices = (raw) => {
+        const s = raw.replace(/```(?:json)?/gi, '');
+        for (let i = s.indexOf('{'); i !== -1; i = s.indexOf('{', i + 1)) {
+          let depth = 0, inStr = false, esc = false;
+          for (let j = i; j < s.length; j++) {
+            const c = s[j];
+            if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+            if (c === '"') inStr = true;
+            else if (c === '{') depth++;
+            else if (c === '}' && --depth === 0) {
+              try { const o = JSON.parse(s.slice(i, j + 1)); if (o && Array.isArray(o.prices)) return o; } catch { /* keep scanning */ }
+              break;
+            }
+          }
+        }
+        return null;
+      };
+
+      const priceBatch = async (batch) => {
+        const deep = batch.some(e => e.priority);
+        const lines = batch.map(e => {
+          const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
+          const where = [e.venue, e.city].filter(Boolean).join(', ');
+          const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
+          const tier = e.tier ? ` — ticket type: ${e.tier} ONLY` : '';
+          // Session time + label matter when a venue hosts two sessions a day
+          // (a tennis day session and night session are different tickets).
+          const hhmm = e.datetime_local && /T\d{2}:\d{2}/.test(e.datetime_local) ? ` at ${e.datetime_local.slice(11, 16)} local time` : '';
+          const label = e.label ? ` (${e.label})` : '';
+          const known = e.matchup ? ` — last known matchup: ${e.matchup}` : '';
+          return `- id ${e.id}: ${e.title}${label}${where ? ` at ${where}` : ''} on ${when}${hhmm} (this specific date and session only)${tier}${known}${tag}`;
+        }).join('\n');
+        const rules = [
+          batch.some(e => e.tier) ? tierRuleText : '',
+          batch.some(isSession) ? sessionRuleText : '',
+          deep ? deepRuleText : '',
+        ].join('');
+        const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
@@ -890,45 +935,33 @@ Keep it concise and conversational. Bold the key insights.`;
           }),
         });
         const aiData = await aiRes.json();
-        if (aiData && aiData.error) {
-          return respond(502, { error: `Price lookup failed: ${aiData.error.message || 'API error'}` });
-        }
+        if (aiData && aiData.error) throw new Error(aiData.error.message || 'API error');
         const text = Array.isArray(aiData.content)
           ? aiData.content.filter(b => b.type === 'text').map(b => b.text).filter(Boolean).join('\n').trim()
           : '';
-        // The answer can arrive split across several text blocks with prose
-        // and citations around it, so scan for the first balanced JSON object
-        // that carries a "prices" array instead of trusting a greedy regex.
-        const parsePrices = (raw) => {
-          const s = raw.replace(/```(?:json)?/gi, '');
-          for (let i = s.indexOf('{'); i !== -1; i = s.indexOf('{', i + 1)) {
-            let depth = 0, inStr = false, esc = false;
-            for (let j = i; j < s.length; j++) {
-              const c = s[j];
-              if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
-              if (c === '"') inStr = true;
-              else if (c === '{') depth++;
-              else if (c === '}' && --depth === 0) {
-                try { const o = JSON.parse(s.slice(i, j + 1)); if (o && Array.isArray(o.prices)) return o; } catch { /* keep scanning */ }
-                break;
-              }
-            }
-          }
-          return null;
-        };
         const parsed = parsePrices(text);
         if (!parsed) {
           console.error('wc_log: no parseable prices JSON', { stop_reason: aiData.stop_reason, text: text.slice(0, 1500) });
-          return respond(502, {
-            error: 'Price lookup returned no parseable prices',
-            stop_reason: aiData.stop_reason || null,
-            preview: text.slice(0, 400),
-          });
+          throw new Error(`no parseable prices (stop_reason ${aiData.stop_reason || 'unknown'}): ${text.slice(0, 200)}`);
         }
-        for (const g of parsed.prices) if (g && g.id != null) priced[String(g.id)] = g;
-      } catch (err) {
-        console.error('wc_log: price lookup threw', err);
-        return respond(502, { error: `Price lookup failed: ${err && err.message ? err.message : 'unknown'}` });
+        return parsed.prices;
+      };
+
+      const batches = [];
+      for (let i = 0; i < due.length; i += BATCH) batches.push(due.slice(i, i + BATCH));
+      const priced = {};
+      const errors = [];
+      const results = await Promise.allSettled(batches.map(priceBatch));
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          for (const g of r.value) if (g && g.id != null) priced[String(g.id)] = g;
+        } else {
+          console.error('wc_log: batch failed', i, r.reason);
+          errors.push(`batch ${i + 1}: ${r.reason && r.reason.message ? r.reason.message : 'unknown'}`);
+        }
+      });
+      if (errors.length === batches.length) {
+        return respond(502, { error: `Price lookup failed: ${errors.join('; ')}` });
       }
 
       // 4) One timestamped reading per due event that got a price.
@@ -951,6 +984,11 @@ Keep it concise and conversational. Bold the key insights.`;
         if (sites.length) item.sites = sites;
         if (e.tier) item.tier = e.tier;
         if (e.datetime_local) item.event_date = e.datetime_local;
+        // Who's playing (tournament sessions). A new matchup on the registry
+        // entry is stamped with when we first saw it, so the verdict can tell
+        // a post-draw reprice from ordinary drift.
+        const matchup = typeof g.matchup === 'string' ? g.matchup.trim().slice(0, 120) : '';
+        if (matchup) item.matchup = matchup;
         try {
           await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item, { removeUndefinedValues: true }) }));
           written++;
@@ -959,11 +997,12 @@ Keep it concise and conversational. Bold the key insights.`;
           e.last_p = item.p;
           if (item.avg != null) e.last_avg = item.avg;
           e.last_at = nowISO;
+          if (matchup && matchup !== e.matchup) { e.matchup = matchup; e.matchup_at = nowISO; }
         } catch { noprice++; }
       }
       if (written) await t.putTracked(upcoming);
 
-      return respond(200, { logged: written, due: due.length, tracked: upcoming.length, no_price: noprice, at: nowISO });
+      return respond(200, { logged: written, due: due.length, batches: batches.length, tracked: upcoming.length, no_price: noprice, at: nowISO, ...(errors.length ? { errors } : {}) });
     }
 
     // Read-side for the World Cup card sparklines: returns each match's saved

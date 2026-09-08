@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
-import { buyTiming, type BuyVerdict, type Reading } from "@/lib/buyTiming";
+import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -63,8 +63,10 @@ type Event = {
   provider_links?: ProviderLink[];
   /** Ticket type being tracked ("Grounds pass", "Upper level"…). */
   tier?: string;
-  /** Shared key for the days of a multi-day event. */
+  /** Shared key for the days/sessions of a multi-day event. */
   group?: string;
+  /** Short session name ("Night · Quarterfinals"), set by the tracker. */
+  label?: string;
 };
 
 type TrackedEvent = {
@@ -80,6 +82,7 @@ type TrackedEvent = {
   priority?: boolean;
   tier?: string | null;
   group?: string | null;
+  label?: string | null;
   last_p?: number | null;
   last_avg?: number | null;
   last_at?: string | null;
@@ -360,6 +363,7 @@ const trackedToEvent = (t: TrackedEvent): Event => ({
   url: t.url || undefined,
   tier: t.tier || undefined,
   group: t.group || undefined,
+  label: t.label || undefined,
 });
 
 // Ticket types a person can choose to track, by event category. "" means
@@ -381,10 +385,63 @@ function tierOptionsFor(category?: string | null, title?: string, venue?: string
   return [];
 }
 
-// "2026 Presidents Cup - Saturday" -> "2026 Presidents Cup" for a group card.
+// "2026 Presidents Cup - Saturday" / "US Open Tennis - Session 22" ->
+// "2026 Presidents Cup" / "US Open Tennis" for a group card.
 const groupTitle = (title: string) => title.replace(/\s+[-–—]\s+[^-–—]+$/, "").trim() || title;
 const dayLabel = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { weekday: "short" }) : "TBD";
+const dateKey = (iso?: string | null) => (iso || "").slice(0, 10);
+// Tennis-style day vs night sessions split at 4pm local.
+const daypart = (iso?: string | null) => {
+  const h = Number((iso || "").slice(11, 13));
+  return Number.isFinite(h) && iso ? (h < 16 ? "Day" : "Night") : "";
+};
+const sessionNo = (title: string) => {
+  const m = title.match(/session\s*(\d+)/i);
+  return m ? Number(m[1]) : null;
+};
+// What one session is called on a chip: "Tue · Night · Quarterfinals". The
+// daypart only appears when that date has more than one session in the
+// group (a golf round shouldn't say "Day").
+function sessionLabel(t: { title: string; datetime_local?: string | null; label?: string | null }, siblings: { datetime_local?: string | null }[]) {
+  const twoADay = siblings.filter((s) => dateKey(s.datetime_local) === dateKey(t.datetime_local)).length > 1;
+  const n = sessionNo(t.title);
+  return [dayLabel(t.datetime_local), twoADay ? daypart(t.datetime_local) : "", t.label || (n != null ? `Session ${n}` : "")]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+// A "series" is a run of 3+ upcoming events sharing a title stem and venue —
+// the sessions of a tournament, the days of a festival. Detected on search
+// results so they can be tracked as one group. Members that are already
+// tracked keep their existing group key so the series never splits.
+type Series = { key: string; title: string; venue: string; events: Event[] };
+function detectSeries(results: Event[], tracked: TrackedEvent[]): { results: Event[]; series: Series[] } {
+  const buckets = new Map<string, Event[]>();
+  for (const e of results) {
+    // Multi-day passes and hospitality packages aren't sessions.
+    if (/package|weekly|multi-day|\d-day|parking/i.test(e.title)) continue;
+    const k = `${groupTitle(e.title).toLowerCase()}|${(e.venue || "").toLowerCase()}`;
+    buckets.set(k, [...(buckets.get(k) || []), e]);
+  }
+  const series: Series[] = [];
+  const stamped = new Map<string | number, string>();
+  for (const evs of buckets.values()) {
+    if (evs.length < 3 || new Set(evs.map((e) => dateKey(e.datetime_local))).size < 2) continue;
+    const stem = groupTitle(evs[0].title);
+    const year = (evs[0].datetime_local || "").slice(0, 4);
+    const existing = evs.map((e) => tracked.find((t) => sameId(t.id, e.id))?.group).find(Boolean);
+    const key = existing || (stem.includes(year) ? slug(stem) : slug(`${stem} ${year}`));
+    for (const e of evs) stamped.set(e.id, key);
+    series.push({ key, title: stem, venue: evs[0].venue, events: evs });
+  }
+  return {
+    results: results.map((e) => (stamped.has(e.id) ? { ...e, group: stamped.get(e.id) } : e)),
+    series,
+  };
+}
 
 const localToEvent = (e: LocalEvent): Event => ({
   id: e.id,
@@ -415,6 +472,8 @@ export default function SeatGenius() {
   const [query, setQuery] = useState("");
   const [searched, setSearched] = useState<string | null>(null);
   const [results, setResults] = useState<Event[]>([]);
+  const [series, setSeries] = useState<Series[]>([]);
+  const [seriesBusy, setSeriesBusy] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [trending, setTrending] = useState<Event[]>([]);
   const [loadingTrending, setLoadingTrending] = useState(true);
@@ -438,6 +497,8 @@ export default function SeatGenius() {
   // Ticket type for the selected event: what's being tracked if it is, else
   // the user's pick before they hit "Track price" ("" = cheapest available).
   const [tier, setTier] = useState("");
+  // Round / matchup for a tournament session, from the tracker.
+  const [sessionMeta, setSessionMeta] = useState<SessionContext | null>(null);
   const [trackBusy, setTrackBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -502,10 +563,13 @@ export default function SeatGenius() {
         `${AWS_URL}/search?action=events&q=${encodeURIComponent(trimmed)}`,
       );
       const data = await res.json();
-      setResults(data.events || []);
+      const found = detectSeries(data.events || [], tracked);
+      setResults(found.results);
+      setSeries(found.series);
     } catch {
       setError("Search failed. Try again.");
       setResults([]);
+      setSeries([]);
     } finally {
       setSearching(false);
     }
@@ -514,6 +578,7 @@ export default function SeatGenius() {
   const clearSearch = () => {
     setSearched(null);
     setResults([]);
+    setSeries([]);
     setQuery("");
   };
 
@@ -528,6 +593,7 @@ export default function SeatGenius() {
     setReadings([]);
     setIsTracked(false);
     setTier("");
+    setSessionMeta(null);
     setDetailError(null);
     setLoadingListings(true);
     try {
@@ -547,6 +613,13 @@ export default function SeatGenius() {
       setReadings(historyData.readings || []);
       setIsTracked(Boolean(historyData.tracked));
       setTier(historyData.tier || "");
+      if (event.group || historyData.group) {
+        setSessionMeta({
+          label: historyData.label || event.label || null,
+          matchup: historyData.matchup || null,
+          matchup_at: historyData.matchup_at || null,
+        });
+      }
     } catch {
       setDetailError("Couldn't load event details. Try again.");
     } finally {
@@ -559,11 +632,13 @@ export default function SeatGenius() {
   // On wide screens the side panel would otherwise sit empty on first load, so
   // open the top trending event automatically (cheap: no Claude call involved).
   const autoSelected = useRef(false);
+  const hasSelection = selectedEvent != null;
   useEffect(() => {
     if (autoSelected.current || !isDesktop || trending.length === 0) return;
     autoSelected.current = true;
+    if (hasSelection) return; // the user beat the trending fetch to it
     selectEvent(trending[0]);
-  }, [isDesktop, trending, selectEvent]);
+  }, [isDesktop, trending, selectEvent, hasSelection]);
 
   const toggleTrack = async () => {
     if (!selectedEvent || trackBusy) return;
@@ -602,6 +677,42 @@ export default function SeatGenius() {
       setDetailError("Couldn't update tracking. Try again.");
     } finally {
       setTrackBusy(false);
+    }
+  };
+
+  // "Track all sessions": one track call per session (already-tracked ones
+  // just pick up the group/tier), then jump to Price Watch.
+  const trackSeries = async (sr: Series, seriesTier: string) => {
+    if (seriesBusy) return;
+    setSeriesBusy(sr.key);
+    setError(null);
+    try {
+      let full = false;
+      for (const ev of sr.events) {
+        const qs = new URLSearchParams({
+          action: "track",
+          event_id: String(ev.id),
+          title: ev.short_title || ev.title || "",
+          date: ev.datetime_local || "",
+          venue: ev.venue || "",
+          city: ev.city || "",
+          category: ev.category || "",
+          url: ev.url || "",
+          group: sr.key,
+          tier: seriesTier,
+        });
+        if (ev.popularity != null) qs.set("popularity", String(ev.popularity));
+        const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
+        if (res.status === 409) { full = true; break; }
+      }
+      if (full) setError("The watchlist filled up before every session was added (25 max). Untrack something and try again.");
+      setTrackedLoaded(false);
+      loadTracked();
+      setView("watch");
+    } catch {
+      setError("Couldn't track the series. Try again.");
+    } finally {
+      setSeriesBusy(null);
     }
   };
 
@@ -716,9 +827,10 @@ export default function SeatGenius() {
             datetime_local: selectedEvent.datetime_local,
             popularity: selectedEvent.popularity,
             readings,
+            session: selectedEvent.group ? sessionMeta || { label: selectedEvent.label } : null,
           })
         : null,
-    [selectedEvent, readings],
+    [selectedEvent, readings, sessionMeta],
   );
 
   const selectedId = selectedEvent?.id ?? null;
@@ -744,6 +856,7 @@ export default function SeatGenius() {
         tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title, selectedEvent.venue)}
         onTierChange={setTier}
         siblings={siblings}
+        session={selectedEvent.group ? sessionMeta || { label: selectedEvent.label } : null}
         onSelectSibling={(t) => selectEvent(trackedToEvent(t))}
         listings={listings}
         buyUrl={buyUrl}
@@ -877,6 +990,10 @@ export default function SeatGenius() {
               <DiscoverView
                 searched={searched}
                 results={results}
+                series={series}
+                seriesBusy={seriesBusy}
+                trackedCount={tracked.length}
+                onTrackSeries={trackSeries}
                 searching={searching}
                 trending={trending}
                 loadingTrending={loadingTrending}
@@ -970,6 +1087,9 @@ function DayStrip({
             <span className="text-[11px] text-slate-500">
               {d.datetime_local ? new Date(d.datetime_local).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
             </span>
+            {d.label && (
+              <span className="mt-0.5 line-clamp-1 text-[10px] leading-tight text-slate-600">{d.label}</span>
+            )}
             <span className={cn("mt-1 text-sm font-semibold tabular-nums", isCheapest ? "text-emerald-700" : "text-slate-900")}>
               {d.last_p != null ? `$${d.last_p}` : "—"}
             </span>
@@ -978,6 +1098,92 @@ function DayStrip({
       })}
     </div>
   );
+}
+
+// Session grid for events with more than one session a day (tennis: a day
+// session and a night session are different tickets). Rows are calendar
+// days, columns are Day / Night, each cell is one session with its round
+// label and latest tracked price. Cheapest session in green, open one in blue.
+function SessionGrid({
+  days,
+  selectedId,
+  onSelect,
+}: {
+  days: TrackedEvent[];
+  selectedId: string | number | null;
+  onSelect: (t: TrackedEvent) => void;
+}) {
+  const priced = days.filter((d) => d.last_p != null);
+  const cheapest = priced.length ? Math.min(...priced.map((d) => d.last_p as number)) : null;
+  const rows = new Map<string, TrackedEvent[]>();
+  for (const d of days) {
+    const k = dateKey(d.datetime_local);
+    rows.set(k, [...(rows.get(k) || []), d]);
+  }
+  const cell = (d: TrackedEvent | undefined, part: "Day" | "Night") => {
+    if (!d) return <span key={part} className="rounded-lg border border-dashed border-slate-200" />;
+    const open = sameId(d.id, selectedId);
+    const isCheapest = d.last_p != null && d.last_p === cheapest && priced.length > 1;
+    return (
+      <button
+        key={d.id}
+        type="button"
+        onClick={() => onSelect(d)}
+        aria-pressed={open}
+        className={cn(
+          "flex min-w-0 flex-col items-start rounded-lg border px-2 py-1.5 text-left transition-colors",
+          open ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-400",
+        )}
+      >
+        <span className="flex w-full items-baseline justify-between gap-2">
+          <span className={cn("text-[10px] font-medium uppercase tracking-wider", open ? "text-blue-700" : "text-slate-500")}>
+            {part}
+            {d.datetime_local ? ` · ${formatTime(d.datetime_local)}` : ""}
+          </span>
+          <span className={cn("text-sm font-semibold tabular-nums", isCheapest ? "text-emerald-700" : "text-slate-900")}>
+            {d.last_p != null ? `$${d.last_p}` : "—"}
+          </span>
+        </span>
+        <span className="line-clamp-1 text-[11px] leading-tight text-slate-700">
+          {d.label || `Session ${sessionNo(d.title) ?? ""}`.trim()}
+        </span>
+      </button>
+    );
+  };
+  return (
+    <div className="grid grid-cols-[auto_1fr_1fr] items-stretch gap-x-2 gap-y-1.5">
+      {[...rows.entries()].map(([k, list]) => {
+        const day = list.find((d) => daypart(d.datetime_local) !== "Night");
+        const night = list.find((d) => daypart(d.datetime_local) === "Night");
+        const iso = list[0].datetime_local;
+        return (
+          <Fragment key={k}>
+            <span className="flex flex-col justify-center pr-1 text-right">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{dayLabel(iso)}</span>
+              <span className="text-[11px] text-slate-500">
+                {iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+              </span>
+            </span>
+            {cell(day, "Day")}
+            {cell(night, "Night")}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+// One-session-a-day groups (a golf week) keep the compact strip; anything
+// with two sessions on one date gets the day/night grid.
+function SessionPicker(props: {
+  days: TrackedEvent[];
+  selectedId: string | number | null;
+  onSelect: (t: TrackedEvent) => void;
+}) {
+  const counts = new Map<string, number>();
+  for (const d of props.days) counts.set(dateKey(d.datetime_local), (counts.get(dateKey(d.datetime_local)) || 0) + 1);
+  const twoADay = [...counts.values()].some((n) => n > 1);
+  return twoADay ? <SessionGrid {...props} /> : <DayStrip {...props} />;
 }
 
 // One card for all the days of a multi-day event on the Price Watch tab.
@@ -990,6 +1196,10 @@ function GroupCard({
   const first = days[0];
   const open = days.some((d) => sameId(d.id, selectedId));
   const tier = days.find((d) => d.tier)?.tier;
+  const priced = days.filter((d) => d.last_p != null);
+  const cheapest = priced.length
+    ? priced.reduce((a, b) => ((a.last_p as number) <= (b.last_p as number) ? a : b))
+    : null;
   return (
     <>
       <Card
@@ -1013,7 +1223,7 @@ function GroupCard({
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5" />
-                  {days.length} days
+                    {days.length} {days.length === 1 ? "session" : "sessions"}
                 </span>
                 {first.venue && (
                   <span className="inline-flex min-w-0 items-center gap-1">
@@ -1032,8 +1242,15 @@ function GroupCard({
               </div>
             </div>
           </div>
+          {cheapest && priced.length > 1 && (
+            <p className="mt-2 text-xs text-slate-600">
+              Cheapest session:{" "}
+              <span className="font-medium text-slate-900">{sessionLabel(cheapest, days)}</span>{" "}
+              <span className="font-semibold text-emerald-700">${cheapest.last_p}</span>
+            </p>
+          )}
           <div className="mt-3">
-            <DayStrip days={days} selectedId={selectedId} onSelect={(d) => onSelect(trackedToEvent(d))} />
+            <SessionPicker days={days} selectedId={selectedId} onSelect={(d) => onSelect(trackedToEvent(d))} />
           </div>
         </CardContent>
       </Card>
@@ -1047,9 +1264,12 @@ function EventList({ events, selectedId, onSelect, inlineDetail }: ListProps & {
     <div className="grid gap-3">
       {events.map((ev) => {
         const open = sameId(ev.id, selectedId);
+        const subtitle = ev.group
+          ? sessionLabel(ev, events.filter((o) => o.group === ev.group))
+          : undefined;
         return (
           <Fragment key={ev.id}>
-            <EventCard event={ev} selected={open} onSelect={onSelect} />
+            <EventCard event={ev} selected={open} onSelect={onSelect} subtitle={subtitle} />
             {open && inlineDetail}
           </Fragment>
         );
@@ -1061,6 +1281,10 @@ function EventList({ events, selectedId, onSelect, inlineDetail }: ListProps & {
 function DiscoverView({
   searched,
   results,
+  series,
+  seriesBusy,
+  trackedCount,
+  onTrackSeries,
   searching,
   trending,
   loadingTrending,
@@ -1070,6 +1294,10 @@ function DiscoverView({
 }: ListProps & {
   searched: string | null;
   results: Event[];
+  series: Series[];
+  seriesBusy: string | null;
+  trackedCount: number;
+  onTrackSeries: (s: Series, tier: string) => void;
   searching: boolean;
   trending: Event[];
   loadingTrending: boolean;
@@ -1100,6 +1328,15 @@ function DiscoverView({
               Clear
             </button>
           </div>
+          {series.map((sr) => (
+            <SeriesBanner
+              key={sr.key}
+              series={sr}
+              busy={seriesBusy === sr.key}
+              slotsLeft={Math.max(0, 25 - trackedCount)}
+              onTrack={(t) => onTrackSeries(sr, t)}
+            />
+          ))}
           {results.length === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-white px-5 py-8 text-center text-sm italic text-slate-500">
               No upcoming events found for that search.
@@ -1121,6 +1358,67 @@ function DiscoverView({
         </>
       )}
     </>
+  );
+}
+
+// "Track the whole tournament": shown above search results when the results
+// contain a run of sessions at one venue. One tap tracks every session with
+// the chosen ticket type, grouped so Price Watch shows them side by side.
+function SeriesBanner({
+  series,
+  busy,
+  slotsLeft,
+  onTrack,
+}: {
+  series: Series;
+  busy: boolean;
+  slotsLeft: number;
+  onTrack: (tier: string) => void;
+}) {
+  const options = tierOptionsFor(series.events[0].category, series.events[0].title, series.venue);
+  const [seriesTier, setSeriesTier] = useState(options[0] || "");
+  const dates = series.events.map((e) => e.datetime_local).filter(Boolean).sort();
+  const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const range = dates.length ? `${short(dates[0])}–${short(dates[dates.length - 1])}` : "";
+  const n = series.events.length;
+  return (
+    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-900">
+            {series.title}
+            {series.venue ? <span className="text-slate-600"> · {series.venue}</span> : null}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-600">
+            {n} sessions{range ? `, ${range}` : ""}. Track them all and compare every session's price in one place.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {options.length > 0 && (
+            <select
+              value={seriesTier}
+              onChange={(e) => setSeriesTier(e.target.value)}
+              aria-label="Ticket type"
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+            >
+              {options.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+              <option value="">Cheapest available</option>
+            </select>
+          )}
+          <Button
+            size="sm"
+            disabled={busy || slotsLeft === 0}
+            onClick={() => onTrack(seriesTier)}
+            className="bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellPlus className="h-4 w-4" />}
+            {slotsLeft >= n ? `Track all ${n} sessions` : slotsLeft === 0 ? "Watchlist full" : `Track next ${slotsLeft}`}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1325,10 +1623,13 @@ function EventCard({
   event,
   selected,
   onSelect,
+  subtitle,
 }: {
   event: Event;
   selected: boolean;
   onSelect: (e: Event) => void;
+  /** Session line for a series member: "Tue · Night · Quarterfinals". */
+  subtitle?: string;
 }) {
   const demand = demandFromPopularity(event.popularity);
   const score = dealScore(event);
@@ -1374,7 +1675,8 @@ function EventCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <h3 className="min-w-0 text-base leading-snug text-slate-900 line-clamp-2 lg:truncate">
-              {event.short_title || event.title}
+              {subtitle ? groupTitle(event.short_title || event.title) : event.short_title || event.title}
+              {subtitle && <span className="block text-sm text-slate-600">{subtitle}</span>}
             </h3>
             <span
               className={cn(
@@ -1647,6 +1949,7 @@ function EventDetail({
   tierOptions,
   onTierChange,
   siblings,
+  session,
   onSelectSibling,
 }: {
   event: Event;
@@ -1659,6 +1962,7 @@ function EventDetail({
   tierOptions: string[];
   onTierChange: (t: string) => void;
   siblings: TrackedEvent[];
+  session: SessionContext | null;
   onSelectSibling: (t: TrackedEvent) => void;
   listings: Listing[];
   buyUrl: string | null;
@@ -1673,6 +1977,10 @@ function EventDetail({
   onAnalyze: () => void;
 }) {
   const demand = demandFromPopularity(event.popularity);
+  const isSession = Boolean(event.group);
+  const subtitle = isSession
+    ? sessionLabel({ ...event, label: session?.label || event.label }, siblings.length ? siblings : [event])
+    : "";
 
   return (
     <div className="space-y-4">
@@ -1691,9 +1999,15 @@ function EventDetail({
                 >
                   <CategoryIcon category={event.category} className="h-5 w-5" />
                 </span>
-                <h2 className="text-2xl text-slate-900">
-                  {event.short_title || event.title}
-                </h2>
+                <div className="min-w-0">
+                  <h2 className="text-2xl text-slate-900">
+                    {isSession ? groupTitle(event.short_title || event.title) : event.short_title || event.title}
+                  </h2>
+                  {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
+                  {session?.matchup && (
+                    <p className="mt-0.5 text-sm font-medium text-slate-800">{session.matchup}</p>
+                  )}
+                </div>
               </div>
               {demand && (
                 <Badge
@@ -1740,17 +2054,23 @@ function EventDetail({
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-slate-900">
                   <Calendar className="h-5 w-5 text-blue-600" />
-                  Compare days
+                  Compare sessions
                 </CardTitle>
                 <p className="text-xs text-slate-500">
-                  Latest tracked price for each day
-                  {tier ? ` (${tier})` : ""}. Click a day to see its curve.
+                  Latest tracked price for each session
+                  {tier ? ` (${tier})` : ""}. Click one to see its curve.
                 </p>
               </CardHeader>
               <CardContent>
-                <DayStrip days={siblings} selectedId={event.id} onSelect={onSelectSibling} />
+                <SessionPicker days={siblings} selectedId={event.id} onSelect={onSelectSibling} />
               </CardContent>
             </Card>
+          )}
+          {(subtitle || session?.matchup) && (
+            <p className="text-sm text-slate-700 lg:hidden">
+              {subtitle}
+              {session?.matchup ? <span className="font-medium"> · {session.matchup}</span> : null}
+            </p>
           )}
           <BuyTimingCard
             verdict={verdict}
