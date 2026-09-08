@@ -837,8 +837,8 @@ Keep it concise and conversational. Bold the key insights.`;
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: deep ? 3000 : 2000,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: deep ? 12 : 8 }],
+            max_tokens: deep ? 4000 : 2000,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: deep ? 10 : 8 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });
@@ -849,13 +849,39 @@ Keep it concise and conversational. Bold the key insights.`;
         const text = Array.isArray(aiData.content)
           ? aiData.content.filter(b => b.type === 'text').map(b => b.text).filter(Boolean).join('\n').trim()
           : '';
-        const jm = text.match(/\{[\s\S]*\}/);
-        if (jm) {
-          const parsed = JSON.parse(jm[0]);
-          for (const g of (parsed.prices || [])) if (g && g.id != null) priced[String(g.id)] = g;
+        // The answer can arrive split across several text blocks with prose
+        // and citations around it, so scan for the first balanced JSON object
+        // that carries a "prices" array instead of trusting a greedy regex.
+        const parsePrices = (raw) => {
+          const s = raw.replace(/```(?:json)?/gi, '');
+          for (let i = s.indexOf('{'); i !== -1; i = s.indexOf('{', i + 1)) {
+            let depth = 0, inStr = false, esc = false;
+            for (let j = i; j < s.length; j++) {
+              const c = s[j];
+              if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+              if (c === '"') inStr = true;
+              else if (c === '{') depth++;
+              else if (c === '}' && --depth === 0) {
+                try { const o = JSON.parse(s.slice(i, j + 1)); if (o && Array.isArray(o.prices)) return o; } catch { /* keep scanning */ }
+                break;
+              }
+            }
+          }
+          return null;
+        };
+        const parsed = parsePrices(text);
+        if (!parsed) {
+          console.error('wc_log: no parseable prices JSON', { stop_reason: aiData.stop_reason, text: text.slice(0, 1500) });
+          return respond(502, {
+            error: 'Price lookup returned no parseable prices',
+            stop_reason: aiData.stop_reason || null,
+            preview: text.slice(0, 400),
+          });
         }
-      } catch {
-        return respond(502, { error: 'Price lookup failed' });
+        for (const g of parsed.prices) if (g && g.id != null) priced[String(g.id)] = g;
+      } catch (err) {
+        console.error('wc_log: price lookup threw', err);
+        return respond(502, { error: `Price lookup failed: ${err && err.message ? err.message : 'unknown'}` });
       }
 
       // 4) One timestamped reading per due event that got a price.
