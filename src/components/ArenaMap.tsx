@@ -25,9 +25,9 @@ function uPath(x: number, y: number, w: number, h: number, r: number) {
 
 const ZONES: Record<ZoneKey, { x: number; y: number; w: number; h: number; r: number; thick: number; label: [number, number]; short: string }> = {
   //             x    y    w    h    r   thick  label
-  lower: { x: 96, y: 78, w: 208, h: 214, r: 60, thick: 26, label: [200, 296], short: "Lower bowl" },
-  club: { x: 68, y: 78, w: 264, h: 246, r: 78, thick: 20, label: [200, 328], short: "Club" },
-  upper: { x: 34, y: 78, w: 332, h: 284, r: 100, thick: 34, label: [200, 366], short: "Upper bowl" },
+  lower: { x: 96, y: 78, w: 208, h: 214, r: 60, thick: 26, label: [200, 279], short: "Lower bowl" },
+  club: { x: 68, y: 78, w: 264, h: 246, r: 78, thick: 20, label: [200, 314], short: "Club" },
+  upper: { x: 34, y: 78, w: 332, h: 284, r: 100, thick: 34, label: [200, 345], short: "Upper bowl" },
   floor: { x: 124, y: 88, w: 152, h: 176, r: 6, thick: 0, label: [200, 176], short: "Floor" },
 };
 
@@ -50,7 +50,7 @@ export function ArenaMap({
   const order: ZoneKey[] = ["upper", "club", "lower", "floor"];
 
   return (
-    <svg viewBox="0 0 400 400" role="img" aria-label="Arena seating map" className={cn("w-full select-none", className)}>
+    <svg viewBox="0 20 400 360" role="img" aria-label="Arena seating map" className={cn("w-full select-none", className)}>
       {/* stage */}
       <rect x="110" y="30" width="180" height="42" rx="6" fill="#1e293b" />
       <text x="200" y="56" textAnchor="middle" fontSize="12" fontWeight="600" fill="#f8fafc" letterSpacing="2">
