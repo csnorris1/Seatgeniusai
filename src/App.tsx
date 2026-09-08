@@ -41,6 +41,7 @@ import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 import { guideFor } from "@/lib/venueNotes";
 import { BallparkMap } from "@/components/VenueMap";
+import { ArenaMap } from "@/components/ArenaMap";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -2420,19 +2421,33 @@ function VenueGuideCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {guide.map === "ballpark" ? (
+        {guide.map ? (
           <>
-            <BallparkMap
-              className="mx-auto max-w-md"
-              activeTier={tier}
-              onPick={onPick}
-              zones={guide.seating.map((s) => ({
-                tier: s.tier,
-                where: s.where,
-                price: priceOf(s.tier),
-                tracked: isTracked(s.tier),
-              }))}
-            />
+            {guide.map === "arena" ? (
+              <ArenaMap
+                className="mx-auto max-w-sm"
+                activeTier={tier}
+                onPick={onPick}
+                zones={guide.seating.map((s) => ({
+                  tier: s.tier,
+                  where: s.where,
+                  price: priceOf(s.tier),
+                  tracked: isTracked(s.tier),
+                }))}
+              />
+            ) : (
+              <BallparkMap
+                className="mx-auto max-w-md"
+                activeTier={tier}
+                onPick={onPick}
+                zones={guide.seating.map((s) => ({
+                  tier: s.tier,
+                  where: s.where,
+                  price: priceOf(s.tier),
+                  tracked: isTracked(s.tier),
+                }))}
+              />
+            )}
             {tier && activeWhere && (
               <p className="text-center text-xs text-slate-600">
                 <span className="font-medium text-slate-900">{tier}:</span> {activeWhere}
