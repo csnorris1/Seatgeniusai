@@ -818,8 +818,20 @@ Keep it concise and conversational. Bold the key insights.`;
       const t = priceHistoryTools();
       const now = new Date();
       const nowISO = now.toISOString();
+      const startedMs = Date.now();
       const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
       if (!ANTHROPIC_API_KEY) return respond(500, { error: 'Pricing is not configured.' });
+      // Every run leaves a status row (PK 'SWEEP', SK 'LAST') readable via
+      // action=sweep_status, since CloudWatch isn't always at hand.
+      const status = { at: nowISO, trigger: action, force: params.force === '1', group: params.group || null };
+      const saveStatus = async (extra) => {
+        try {
+          await t.ddb.send(new t.PutItemCommand({
+            TableName: t.TABLE,
+            Item: t.marshall({ event_id: 'SWEEP', date: 'LAST', ...status, ...extra, elapsed_ms: Date.now() - startedMs }, { removeUndefinedValues: true }),
+          }));
+        } catch { /* status is best-effort */ }
+      };
 
       // 1) Load the watchlist and prune events that already happened.
       const list = await t.getTracked();
@@ -863,12 +875,17 @@ Keep it concise and conversational. Bold the key insights.`;
         const last = e.last_at ? new Date(e.last_at).getTime() : NaN;
         return isNaN(last) ? Infinity : (now.getTime() - last) / 3600000 / intervalOf(e);
       };
+      // Manual runs can narrow to one group (`group=`) and cap the count
+      // (`limit=`), e.g. to seed a newly tracked tournament on its own.
+      const limit = Math.min(Math.max(parseInt(params.limit, 10) || BATCH * MAX_BATCHES, 1), BATCH * MAX_BATCHES);
       const due = upcoming
+        .filter(e => !params.group || e.group === params.group)
         .filter(isDue)
         .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)))
-        .slice(0, BATCH * MAX_BATCHES);
+        .slice(0, limit);
 
       if (due.length === 0) {
+        await saveStatus({ due: 0, logged: 0, note: 'nothing due' });
         return respond(200, { logged: 0, tracked: upcoming.length, note: 'No tracked events due this hour.' });
       }
 
@@ -929,7 +946,9 @@ Keep it concise and conversational. Bold the key insights.`;
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: deep ? 4000 : 2000,
+            // Search-loop narration counts against max_tokens, so leave
+            // headroom well beyond the JSON itself or the answer truncates.
+            max_tokens: deep ? 6000 : 4000,
             tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: deep ? 10 : 8 }],
             messages: [{ role: 'user', content: prompt }],
           }),
@@ -944,23 +963,29 @@ Keep it concise and conversational. Bold the key insights.`;
           console.error('wc_log: no parseable prices JSON', { stop_reason: aiData.stop_reason, text: text.slice(0, 1500) });
           throw new Error(`no parseable prices (stop_reason ${aiData.stop_reason || 'unknown'}): ${text.slice(0, 200)}`);
         }
-        return parsed.prices;
+        return { prices: parsed.prices, stop_reason: aiData.stop_reason || null, preview: text.slice(0, 300) };
       };
 
       const batches = [];
       for (let i = 0; i < due.length; i += BATCH) batches.push(due.slice(i, i + BATCH));
       const priced = {};
       const errors = [];
+      const batchStatus = [];
       const results = await Promise.allSettled(batches.map(priceBatch));
       results.forEach((r, i) => {
+        const ids = batches[i].map(e => String(e.id));
         if (r.status === 'fulfilled') {
-          for (const g of r.value) if (g && g.id != null) priced[String(g.id)] = g;
+          for (const g of r.value.prices) if (g && g.id != null) priced[String(g.id)] = g;
+          batchStatus.push({ ids, ok: true, returned: r.value.prices.length, stop_reason: r.value.stop_reason, preview: r.value.preview });
         } else {
           console.error('wc_log: batch failed', i, r.reason);
-          errors.push(`batch ${i + 1}: ${r.reason && r.reason.message ? r.reason.message : 'unknown'}`);
+          const msg = r.reason && r.reason.message ? r.reason.message : 'unknown';
+          errors.push(`batch ${i + 1}: ${msg}`);
+          batchStatus.push({ ids, ok: false, error: msg });
         }
       });
       if (errors.length === batches.length) {
+        await saveStatus({ due: due.length, logged: 0, batches: batchStatus, errors });
         return respond(502, { error: `Price lookup failed: ${errors.join('; ')}` });
       }
 
@@ -1001,8 +1026,19 @@ Keep it concise and conversational. Bold the key insights.`;
         } catch { noprice++; }
       }
       if (written) await t.putTracked(upcoming);
+      await saveStatus({ due: due.length, logged: written, no_price: noprice, batches: batchStatus, ...(errors.length ? { errors } : {}) });
 
       return respond(200, { logged: written, due: due.length, batches: batches.length, tracked: upcoming.length, no_price: noprice, at: nowISO, ...(errors.length ? { errors } : {}) });
+    }
+
+    // What the last sweep did: which events were due, per-batch outcome
+    // (ids, how many prices came back, Claude's stop reason, a preview of
+    // its text on failure), what got written, and how long it took.
+    if (action === 'sweep_status') {
+      const t = priceHistoryTools();
+      const { GetItemCommand } = require('@aws-sdk/client-dynamodb');
+      const out = await t.ddb.send(new GetItemCommand({ TableName: t.TABLE, Key: t.marshall({ event_id: 'SWEEP', date: 'LAST' }) }));
+      return respond(200, out.Item ? t.unmarshall(out.Item) : { note: 'No sweep has run since status logging was added.' });
     }
 
     // Read-side for the World Cup card sparklines: returns each match's saved

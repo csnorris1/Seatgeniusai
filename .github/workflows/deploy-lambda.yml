@@ -37,7 +37,7 @@ jobs:
             --function-name seatgenius-search \
             --handler search.handler \
             --runtime nodejs22.x \
-            --timeout 90 \
+            --timeout 150 \
             --memory-size 256 \
             --region us-east-2
 
