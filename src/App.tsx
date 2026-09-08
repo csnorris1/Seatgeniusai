@@ -1558,7 +1558,7 @@ function MarketplaceCard({ readings }: { readings: Reading[] }) {
         </CardTitle>
         <p className="text-xs text-slate-500">
           Checked {formatDate(latest.t)}
-          {time && ` at ${time}`} · updates every hour
+          {time && ` at ${time}`} · updates every 2 hours
         </p>
       </CardHeader>
       <CardContent>

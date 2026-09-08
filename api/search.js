@@ -563,9 +563,9 @@ Keep it concise and conversational. Bold the key insights.`;
       if (!event_id || !params.title) return respond(400, { error: 'event_id and title are required' });
       const t = priceHistoryTools();
       const list = await t.getTracked();
-      // priority=1 puts the event in "deep watch": priced every hour with a
-      // per-marketplace breakdown (see the sweep). Costs ~$3/day per event, so
-      // it's opt-in and meant for one or two events at a time.
+      // priority=1 puts the event in "deep watch": priced every 2 hours with a
+      // per-marketplace breakdown (see the sweep). Costs ~$1.50/day per event,
+      // so it's opt-in and meant for one or two events at a time.
       const wantPriority = params.priority === '1';
       const existing = list.find(e => String(e.id) === String(event_id));
       if (existing) {
@@ -800,7 +800,7 @@ Keep it concise and conversational. Bold the key insights.`;
       const h = now.getUTCHours();
       const isDue = (e) => {
         if (params.force === '1') return true;
-        if (e.priority) return true; // deep watch: every hour, regardless of days out
+        if (e.priority) return h % 2 === 0; // deep watch: every 2 hours, regardless of days out
         if (!e.datetime_local) return h === 12;
         const dt = new Date(e.datetime_local);
         if (isNaN(dt.getTime())) return h === 12;
