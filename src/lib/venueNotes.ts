@@ -20,6 +20,8 @@ export type VenueGuide = {
   notes: string[];
   /** Where the facts came from, for the footer. */
   sources?: { label: string; url: string }[];
+  /** Which schematic to draw the tiers on (src/components/VenueMap.tsx). */
+  map?: "ballpark";
 };
 
 const MLB_TEAMS =
@@ -31,21 +33,21 @@ const SPORT_GUIDES: { match: RegExp; guide: VenueGuide }[] = [
     match: MLB_TEAMS,
     guide: {
       name: "MLB ballparks",
+      map: "ballpark",
       tiers: ["Upper deck", "Lower outfield & bleachers", "Lower infield box", "Club level"],
       seating: [
-        { tier: "Upper deck", where: "Top level, usually the 400s or 500s. Cheapest seats in the park; up top behind the plate beats the outfield corners." },
-        { tier: "Lower outfield & bleachers", where: "Field-level seats past the bases plus the bleachers. Close to the grass, far from the plate." },
-        { tier: "Lower infield box", where: "Field level between the dugouts and behind home plate. What most fans mean by good seats." },
-        { tier: "Club level", where: "The 200s or 300s with indoor concourses, wider seats and often food included. Priced like a night out." },
+        { tier: "Upper deck", where: "400s/500s. Cheapest. Behind the plate beats the corners." },
+        { tier: "Lower outfield & bleachers", where: "Field level past the bases, plus bleachers." },
+        { tier: "Lower infield box", where: "Field level, dugout to dugout." },
+        { tier: "Club level", where: "200s/300s, indoor concourse, often food included." },
       ],
       notes: [
-        "Regular-season get-in prices fall about 25% over the final week and about half from three months out, so an ordinary game rewards waiting.",
-        "High-demand games flip that: rivalries, playoff races and star visitors usually climb into game day. Buy those a week or two out.",
-        "Giveaway and fireworks nights price like weekend games even on a Tuesday. Buy five or more days out.",
-        "Saturday and Friday are the priciest nights; Wednesday is the cheapest. Weekday day games are the cheapest window of all.",
-        "Rain or cold in the forecast at an open-air park knocks prices down in the last two or three days. Roofed parks don't get that dip.",
-        "Cheap upper-deck seats discount earliest and deepest; lower-bowl and club seats hold their value longer, so bargain hunters wait and premium buyers go early.",
-        "Every marketplace now shows all-in prices. TickPick charges the buyer no fee, so it is often cheapest at checkout for the same seat.",
+        "Ordinary games drop ~25% in the final week. Wait.",
+        "Rivalries, playoff races, giveaway nights climb into game day. Buy early.",
+        "Wednesday is cheapest; Friday and Saturday cost the most.",
+        "Rain or cold in the forecast knocks prices down in the last 2–3 days.",
+        "Upper deck discounts first and deepest; lower bowl holds value.",
+        "TickPick has no buyer fee, so it's often cheapest for the same seat.",
       ],
       sources: [
         { label: "StubHub 2023 season study via FinanceBuzz", url: "https://financebuzz.com/best-time-to-buy-mlb-tickets" },
@@ -65,19 +67,20 @@ const VENUE_GUIDES: { match: RegExp; guide: VenueGuide }[] = [
     match: /rate field|guaranteed rate|u\.?s\.? cellular|comiskey/i,
     guide: {
       name: "Rate Field · Chicago White Sox",
+      map: "ballpark",
       tiers: ["Upper deck (500s)", "Lower outfield & bleachers", "Lower infield box", "Club level (300s)"],
       seating: [
-        { tier: "Upper deck (500s)", where: "Sections 506–558. Cheapest tier. 516–520 and 544–548 are the value picks: nearly the same view as the upper boxes for less, and a clear fireworks sightline. Corners 506–512 and 552–558 are farthest from the play." },
-        { tier: "Lower outfield & bleachers", where: "Field level in 101–105 and 157–159, plus bleachers 160–164 in left-center (assigned metal benches, not general admission). Close to the field, no shade all game." },
-        { tier: "Lower infield box", where: "Sections 108–156 between the dugouts and behind the plate; 119–145 is the heart of it. Corners 108, 109, 155 and 156 have foul-pole obstruction, worst in low rows." },
-        { tier: "Club level (300s)", where: "Sections 311–357 with indoor club concourses; 330–334 sit right behind the plate. Includes the all-inclusive Guaranteed Rate Club and the Stadium Club add-on down the right-field line." },
+        { tier: "Upper deck (500s)", where: "506–558. Best value: 516–520 and 544–548. Avoid the corners." },
+        { tier: "Lower outfield & bleachers", where: "101–105, 157–159, bleachers 160–164. No shade." },
+        { tier: "Lower infield box", where: "108–156; 119–145 is the sweet spot. Corners have pole obstruction." },
+        { tier: "Club level (300s)", where: "311–357, indoor concourse. 330–334 behind the plate." },
       ],
       notes: [
-        "Levels are gated: a 300-level ticket cannot get onto the 100-level concourse, and vice versa. Buy the level you actually want to be on.",
-        "First-base side is the shade side for afternoon games. Rows 33–37 in sections 112–153 sit under the club-level overhang for rain and sun cover.",
-        "The all-inclusive 100-level areas (CIBC Scout Seats 130S–134S, Miller Lite Landing, Topo Chico Cantina) are food-and-drink packages. They show up as the priciest lower-level listings and are not the same as a box seat.",
-        "Parking is about $27 prepaid or $30 day-of and card only. The Red Line to Sox-35th is a few dollars round trip and changes the true all-in price of a cheap ticket.",
-        "Attendance is up sharply in 2026 and the team is in a September race, so recent home games have held or climbed into game day rather than dropping like a typical Sox weeknight.",
+        "Levels are gated: a 300s ticket can't reach the 100s concourse.",
+        "First-base side is the shade side. Rows 33–37 sit under the overhang.",
+        "All-inclusive 100-level areas (Scout Seats, Miller Lite Landing) are food packages, not box seats.",
+        "Parking ~$27–30. The Red Line to Sox-35th is a few bucks.",
+        "Sox are in a September race: prices have been holding, not dropping.",
       ],
       sources: [
         { label: "The Stadium Insiders seating guide", url: "https://thestadiuminsiders.com/stadium_guides/chicago-white-sox/ticketing-seating-premium/" },

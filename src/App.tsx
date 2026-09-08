@@ -40,6 +40,7 @@ import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 import { guideFor } from "@/lib/venueNotes";
+import { BallparkMap } from "@/components/VenueMap";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -2331,7 +2332,12 @@ function EventDetail({
             onSwitchTier={onSwitchTier}
             onTrackTier={onTrackTier}
           />
-          <VenueGuideCard event={event} tier={tier} />
+          <VenueGuideCard
+            event={event}
+            tier={tier}
+            trackedTiers={trackedTiers}
+            onPick={(t) => (trackedTiers.some((x) => (x.tier || "") === t) ? onSwitchTier(t) : onTierChange(t))}
+          />
           <PriceHistoryCard readings={readings} isTracked={isTracked} />
           <MarketplaceCard readings={readings} />
           <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
@@ -2383,9 +2389,24 @@ function EventDetail({
 // What a first-time buyer needs to know about this venue or sport: what the
 // ticket types cover (the one being tracked is highlighted) and the traps
 // that move prices. Content lives in src/lib/venueNotes.ts.
-function VenueGuideCard({ event, tier }: { event: Event; tier: string }) {
+function VenueGuideCard({
+  event,
+  tier,
+  trackedTiers,
+  onPick,
+}: {
+  event: Event;
+  tier: string;
+  trackedTiers: TrackedTier[];
+  onPick: (tier: string) => void;
+}) {
+  const [more, setMore] = useState(false);
   const guide = guideFor({ venue: event.venue, title: event.title, category: event.category });
   if (!guide) return null;
+  const notes = more ? guide.notes : guide.notes.slice(0, 2);
+  const priceOf = (t: string) => trackedTiers.find((x) => (x.tier || "") === t)?.last_p ?? null;
+  const isTracked = (t: string) => trackedTiers.some((x) => (x.tier || "") === t);
+  const activeWhere = guide.seating.find((s) => s.tier === tier)?.where;
   return (
     <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader className="pb-2">
@@ -2393,50 +2414,83 @@ function VenueGuideCard({ event, tier }: { event: Event; tier: string }) {
           <Info className="h-5 w-5 text-blue-600" />
           Know before you buy
         </CardTitle>
-        <p className="text-xs text-slate-500">{guide.name}</p>
+        <p className="text-xs text-slate-500">
+          {guide.name}
+          {guide.map ? " · click a zone to switch or pick a ticket type" : ""}
+        </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {guide.seating.map((s) => {
-            const active = tier && s.tier === tier;
-            return (
-              <div
-                key={s.tier}
-                className={cn(
-                  "rounded-lg border px-3 py-2.5",
-                  active ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50",
-                )}
-              >
-                <div className={cn("text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>
-                  {s.tier}
-                  {active && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-blue-600">tracking</span>}
-                </div>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{s.where}</p>
-              </div>
-            );
-          })}
-        </div>
-        <ul className="space-y-1.5 text-sm text-slate-700">
-          {guide.notes.map((n, i) => (
+      <CardContent className="space-y-3">
+        {guide.map === "ballpark" ? (
+          <>
+            <BallparkMap
+              className="mx-auto max-w-md"
+              activeTier={tier}
+              onPick={onPick}
+              zones={guide.seating.map((s) => ({
+                tier: s.tier,
+                where: s.where,
+                price: priceOf(s.tier),
+                tracked: isTracked(s.tier),
+              }))}
+            />
+            {tier && activeWhere && (
+              <p className="text-center text-xs text-slate-600">
+                <span className="font-medium text-slate-900">{tier}:</span> {activeWhere}
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+            {guide.seating.map((s) => {
+              const active = tier && s.tier === tier;
+              return (
+                <button
+                  type="button"
+                  key={s.tier}
+                  onClick={() => onPick(s.tier)}
+                  className={cn(
+                    "flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50",
+                    active && "bg-blue-50 hover:bg-blue-50",
+                  )}
+                >
+                  <span className={cn("shrink-0 text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>
+                    {s.tier}
+                  </span>
+                  <span className="truncate text-right text-xs text-slate-600">{s.where}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <ul className="space-y-1 text-sm text-slate-700">
+          {notes.map((n, i) => (
             <li key={i} className="flex gap-2">
               <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
               <span>{n}</span>
             </li>
           ))}
         </ul>
-        {guide.sources && guide.sources.length > 0 && (
-          <p className="text-[11px] text-slate-500">
-            Sources:{" "}
-            {guide.sources.map((s, i) => (
-              <Fragment key={s.url}>
-                {i > 0 && ", "}
-                <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  {s.label}
-                </a>
-              </Fragment>
-            ))}
-          </p>
-        )}
+        <div className="flex items-center justify-between text-xs">
+          <button
+            type="button"
+            onClick={() => setMore((v) => !v)}
+            className="text-blue-600 hover:underline"
+          >
+            {more ? "Less" : `${guide.notes.length - 2} more tips`}
+          </button>
+          {more && guide.sources && guide.sources.length > 0 && (
+            <span className="text-slate-500">
+              {guide.sources.slice(0, 3).map((s, i) => (
+                <Fragment key={s.url}>
+                  {i > 0 && " · "}
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                    {s.label.split(" ")[0]}
+                  </a>
+                </Fragment>
+              ))}
+            </span>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
