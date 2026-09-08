@@ -1348,6 +1348,97 @@ function GroupCard({
   );
 }
 
+// One event tracked under several ticket types: the event once, then a chip
+// per type with its latest price. Click a chip to open that type's curve.
+function TierCard({
+  entries,
+  selectedId,
+  selectedTier,
+  onSelect,
+  inlineDetail,
+}: ListProps & { entries: TrackedEvent[] }) {
+  const first = entries[0];
+  const open = sameId(first.id, selectedId);
+  const time = formatTime(first.datetime_local || undefined);
+  const demand = demandFromPopularity(first.popularity ?? undefined);
+  const priced = entries.filter((e) => e.last_p != null);
+  const cheapest = priced.length > 1 ? Math.min(...priced.map((e) => e.last_p as number)) : null;
+  return (
+    <>
+      <Card
+        className={cn(
+          "min-w-0 border-slate-200 bg-white backdrop-blur-sm",
+          open && "border-blue-500/50 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
+        )}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                metaFor(first.category).chip,
+              )}
+            >
+              <CategoryIcon category={first.category} className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base leading-snug text-slate-900">{first.title}</h3>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
+                <span className="inline-flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  {formatDate(first.datetime_local || undefined)}
+                  {time && ` • ${time}`}
+                </span>
+                {first.venue && (
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {first.venue}
+                      {first.city ? `, ${first.city}` : ""}
+                    </span>
+                  </span>
+                )}
+                <span className="text-slate-500">{entries.length} ticket types</span>
+              </div>
+              {demand && (
+                <Badge variant="outline" className={cn("mt-2 px-2 py-0 text-[10px]", demandClasses[demand])}>
+                  {demand} demand
+                </Badge>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {entries.map((e) => {
+              const active = open && (e.tier || "") === selectedTier;
+              const isCheapest = e.last_p != null && e.last_p === cheapest;
+              return (
+                <button
+                  key={tkey(e)}
+                  type="button"
+                  onClick={() => onSelect(trackedToEvent(e))}
+                  aria-pressed={active}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition-colors",
+                    active
+                      ? "border-blue-400 bg-blue-50 text-blue-800"
+                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400",
+                  )}
+                >
+                  <span className="font-medium">{e.tier || "Cheapest available"}</span>
+                  <span className={cn("font-semibold tabular-nums", isCheapest ? "text-emerald-700" : active ? "text-blue-800" : "text-slate-900")}>
+                    {e.last_p != null ? `$${e.last_p}` : "—"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+      {open && inlineDetail}
+    </>
+  );
+}
+
 function EventList({ events, selectedId, onSelect, inlineDetail }: ListProps & { events: Event[] }) {
   return (
     <div className="grid gap-3">
@@ -1534,12 +1625,23 @@ function WatchView({
       } else singles.push(t);
     }
     const byDate = (a?: string | null, b?: string | null) => ((a || "") < (b || "") ? -1 : 1);
-    const out: { key: string; date: string; days?: TrackedEvent[]; single?: TrackedEvent }[] = [];
+    const out: { key: string; date: string; days?: TrackedEvent[]; single?: TrackedEvent; tiers?: TrackedEvent[] }[] = [];
     for (const [key, days] of groups) {
       days.sort((a, b) => byDate(a.datetime_local, b.datetime_local));
       out.push({ key: `g:${key}`, date: days[0].datetime_local || "", days });
     }
-    for (const s of singles) out.push({ key: tkey(s), date: s.datetime_local || "", single: s });
+    // One event tracked under several ticket types is one card with type
+    // chips, not one card per type.
+    const byId = new Map<string, TrackedEvent[]>();
+    for (const s of singles) {
+      const arr = byId.get(String(s.id)) || [];
+      arr.push(s);
+      byId.set(String(s.id), arr);
+    }
+    for (const [id, entries] of byId) {
+      if (entries.length === 1) out.push({ key: tkey(entries[0]), date: entries[0].datetime_local || "", single: entries[0] });
+      else out.push({ key: `t:${id}`, date: entries[0].datetime_local || "", tiers: entries });
+    }
     return out.sort((a, b) => byDate(a.date, b.date));
   }, [tracked]);
   return (
@@ -1578,6 +1680,8 @@ function WatchView({
           {rows.map((row) =>
             row.days ? (
               <GroupCard key={row.key} days={row.days} {...list} />
+            ) : row.tiers ? (
+              <TierCard key={row.key} entries={row.tiers} {...list} />
             ) : row.single ? (
               <Fragment key={row.key}>
                 <EventCard
