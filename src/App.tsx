@@ -1966,7 +1966,7 @@ function BuyTimingCard({
                 })}
               </div>
             )}
-            {isTracked && untracked.length > 0 && (
+            {isTracked && untracked.some((o) => o !== "") && (
               <select
                 value=""
                 disabled={trackBusy}
