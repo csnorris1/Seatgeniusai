@@ -39,6 +39,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
+import { guideFor } from "@/lib/venueNotes";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -387,6 +388,11 @@ function tierOptionsFor(category?: string | null, title?: string, venue?: string
   if (/grounds admission|grounds pass/.test(t)) return ["Grounds pass"];
   const openGrounds = /golf|cup|open|championship|invitational|classic|masters|festival|fest\b|grand prix|marathon/.test(t);
   if (category === "Sports" && openGrounds) return ["Grounds pass", "Hospitality"];
+  // A venue or sport guide (src/lib/venueNotes.ts) knows the real seating
+  // levels — e.g. an MLB park's upper deck / lower outfield / lower infield /
+  // club — so prefer its ticket types over the generic stadium split.
+  const guide = guideFor({ venue, title, category });
+  if (guide) return guide.tiers;
   if (category === "Sports") return ["Upper level", "Lower level", "Club or suite"];
   if (category === "Concerts") return ["GA floor", "Lower bowl", "Upper bowl"];
   if (category === "Theater" || category === "Arts") return ["Orchestra", "Mezzanine", "Balcony"];
@@ -2221,6 +2227,7 @@ function EventDetail({
             onSwitchTier={onSwitchTier}
             onTrackTier={onTrackTier}
           />
+          <VenueGuideCard event={event} tier={tier} />
           <PriceHistoryCard readings={readings} isTracked={isTracked} />
           <MarketplaceCard readings={readings} />
           <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
@@ -2266,6 +2273,68 @@ function EventDetail({
         />
       )}
     </div>
+  );
+}
+
+// What a first-time buyer needs to know about this venue or sport: what the
+// ticket types cover (the one being tracked is highlighted) and the traps
+// that move prices. Content lives in src/lib/venueNotes.ts.
+function VenueGuideCard({ event, tier }: { event: Event; tier: string }) {
+  const guide = guideFor({ venue: event.venue, title: event.title, category: event.category });
+  if (!guide) return null;
+  return (
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-slate-900">
+          <Info className="h-5 w-5 text-blue-600" />
+          Know before you buy
+        </CardTitle>
+        <p className="text-xs text-slate-500">{guide.name}</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {guide.seating.map((s) => {
+            const active = tier && s.tier === tier;
+            return (
+              <div
+                key={s.tier}
+                className={cn(
+                  "rounded-lg border px-3 py-2.5",
+                  active ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50",
+                )}
+              >
+                <div className={cn("text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>
+                  {s.tier}
+                  {active && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-blue-600">tracking</span>}
+                </div>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{s.where}</p>
+              </div>
+            );
+          })}
+        </div>
+        <ul className="space-y-1.5 text-sm text-slate-700">
+          {guide.notes.map((n, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+              <span>{n}</span>
+            </li>
+          ))}
+        </ul>
+        {guide.sources && guide.sources.length > 0 && (
+          <p className="text-[11px] text-slate-500">
+            Sources:{" "}
+            {guide.sources.map((s, i) => (
+              <Fragment key={s.url}>
+                {i > 0 && ", "}
+                <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  {s.label}
+                </a>
+              </Fragment>
+            ))}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
