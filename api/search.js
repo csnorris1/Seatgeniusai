@@ -614,17 +614,19 @@ Keep it concise and conversational. Bold the key insights.`;
       if (list.length >= 40) {
         return respond(409, { error: 'Watchlist is full (40 entries). Untrack something first.' });
       }
-      // A new tier of an already-tracked event inherits its session metadata.
+      // A new tier of an already-tracked event inherits everything the call
+      // didn't supply: the event details and its session metadata.
       const sib = sameEvent[0] || null;
+      const inherit = (v, k) => (v != null && v !== '' ? v : (sib ? sib[k] ?? null : null));
       list.push({
         id: String(event_id),
-        title: params.title,
-        datetime_local: params.date || null,
-        venue: params.venue || null,
-        city: params.city || null,
-        category: params.category || null,
-        popularity: params.popularity ? Number(params.popularity) : null,
-        url: params.url || null,
+        title: sib && /session\s*\d+/i.test(sib.title || '') && !/session\s*\d+/i.test(params.title) ? sib.title : params.title,
+        datetime_local: inherit(params.date, 'datetime_local'),
+        venue: inherit(params.venue, 'venue'),
+        city: inherit(params.city, 'city'),
+        category: inherit(params.category, 'category'),
+        popularity: params.popularity ? Number(params.popularity) : (sib ? sib.popularity ?? null : null),
+        url: inherit(params.url, 'url'),
         tracked_at: new Date().toISOString(),
         ...(wantPriority ? { priority: true } : {}),
         ...(tier ? { tier } : {}),
