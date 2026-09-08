@@ -83,7 +83,8 @@ export function buyTiming(opts: {
   const pop = popularity ?? null;
   // A final or semifinal is high demand whatever the popularity score says.
   const round = (session?.label || "").toLowerCase();
-  const lateRound = /final/.test(round);
+  // "final", "finals", "semifinal(s)" — but not "quarterfinals".
+  const lateRound = /(^|[^a-z])(semi-?)?finals?\b/.test(round);
   const highDemand = lateRound || (pop != null && pop >= 0.75);
   const lowDemand = !lateRound && pop != null && pop < 0.55;
   const trend = trendPct(readings);
