@@ -100,33 +100,33 @@ type LocalCategory = (typeof LOCAL_CATEGORIES)[number];
 const categoryMeta: Record<string, { label: string; chip: string; accent: string }> = {
   Sports: {
     label: "Sports",
-    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-    accent: "text-emerald-400",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    accent: "text-emerald-600",
   },
   Concerts: {
     label: "Concerts",
-    chip: "border-purple-500/30 bg-purple-500/10 text-purple-300",
-    accent: "text-purple-400",
+    chip: "border-purple-200 bg-purple-50 text-purple-700",
+    accent: "text-purple-600",
   },
   Theater: {
     label: "Theater",
-    chip: "border-pink-500/30 bg-pink-500/10 text-pink-300",
-    accent: "text-pink-400",
+    chip: "border-pink-200 bg-pink-50 text-pink-700",
+    accent: "text-pink-600",
   },
   Comedy: {
     label: "Comedy",
-    chip: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
-    accent: "text-yellow-400",
+    chip: "border-yellow-200 bg-yellow-50 text-yellow-700",
+    accent: "text-yellow-600",
   },
   Arts: {
     label: "Arts",
-    chip: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
-    accent: "text-cyan-400",
+    chip: "border-cyan-200 bg-cyan-50 text-cyan-700",
+    accent: "text-cyan-600",
   },
   Other: {
     label: "Event",
-    chip: "border-slate-600/40 bg-slate-500/10 text-slate-300",
-    accent: "text-slate-400",
+    chip: "border-slate-300 bg-slate-100 text-slate-700",
+    accent: "text-slate-600",
   },
 };
 
@@ -199,10 +199,10 @@ function demandFromPopularity(p?: number) {
 }
 
 const demandClasses: Record<string, string> = {
-  "Very High": "border-red-500/30 bg-red-500/10 text-red-300",
-  High: "border-orange-500/30 bg-orange-500/10 text-orange-300",
-  Moderate: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-  Low: "border-slate-600/40 bg-slate-500/10 text-slate-300",
+  "Very High": "border-red-200 bg-red-50 text-red-700",
+  High: "border-orange-200 bg-orange-50 text-orange-700",
+  Moderate: "border-blue-200 bg-blue-50 text-blue-700",
+  Low: "border-slate-300 bg-slate-100 text-slate-700",
 };
 
 function dealScore(event: Event): number | null {
@@ -213,16 +213,16 @@ function dealScore(event: Event): number | null {
 }
 
 function scoreClass(score: number) {
-  if (score >= 85) return "text-emerald-400";
-  if (score >= 70) return "text-green-400";
-  if (score >= 55) return "text-yellow-400";
-  return "text-slate-400";
+  if (score >= 85) return "text-emerald-600";
+  if (score >= 70) return "text-green-600";
+  if (score >= 55) return "text-yellow-600";
+  return "text-slate-600";
 }
 
 function formatAnalysis(text: string) {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
     part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i} className="text-white">
+      <strong key={i} className="text-slate-900">
         {part.slice(2, -2)}
       </strong>
     ) : (
@@ -282,32 +282,32 @@ const insightStyles: Record<
   { bg: string; border: string; title: string; body: string; iconColor: string }
 > = {
   verdict: {
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/20",
-    title: "text-emerald-300",
-    body: "text-emerald-100/90",
-    iconColor: "text-emerald-400",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    title: "text-emerald-700",
+    body: "text-emerald-900/90",
+    iconColor: "text-emerald-600",
   },
   positive: {
-    bg: "bg-emerald-500/5",
-    border: "border-emerald-500/20",
-    title: "text-emerald-300",
-    body: "text-emerald-100/80",
-    iconColor: "text-emerald-400",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    title: "text-emerald-700",
+    body: "text-emerald-900/80",
+    iconColor: "text-emerald-600",
   },
   warning: {
-    bg: "bg-amber-500/5",
-    border: "border-amber-500/20",
-    title: "text-amber-300",
-    body: "text-amber-100/80",
-    iconColor: "text-amber-400",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    title: "text-amber-700",
+    body: "text-amber-900/80",
+    iconColor: "text-amber-600",
   },
   info: {
-    bg: "bg-blue-500/5",
-    border: "border-blue-500/20",
-    title: "text-blue-300",
-    body: "text-blue-100/80",
-    iconColor: "text-blue-400",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    title: "text-blue-700",
+    body: "text-blue-900/80",
+    iconColor: "text-blue-600",
   },
 };
 
@@ -705,13 +705,13 @@ export default function SeatGenius() {
   // it lives in the side panel instead (see <aside> below).
   const inlineDetail =
     !isDesktop && detail ? (
-      <div className="-mt-1 rounded-b-xl border border-t-0 border-blue-500/30 bg-slate-950/60 p-3 sm:p-4">
+      <div className="-mt-1 rounded-b-xl border border-t-0 border-blue-200 bg-slate-50 p-3 sm:p-4">
         {detail}
         <Button
           variant="ghost"
           size="sm"
           onClick={resetToEvents}
-          className="mt-3 w-full text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
+          className="mt-3 w-full text-slate-600 hover:bg-slate-100 hover:text-slate-900"
         >
           <X className="h-4 w-4" />
           Close
@@ -722,23 +722,23 @@ export default function SeatGenius() {
   const listProps: ListProps = { selectedId, onSelect: handleSelect, inlineDetail };
 
   return (
-    <div className="dark min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 font-sans">
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/70 backdrop-blur-md">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900 font-sans">
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              <span className="text-white">SEAT</span>
+              <span className="text-slate-900">SEAT</span>
               <span className="text-blue-500">GENIUS</span>
-              <span className="text-blue-400">.</span>
+              <span className="text-blue-600">.</span>
             </h1>
-            <p className="mt-0.5 hidden text-sm text-slate-400 sm:block">
+            <p className="mt-0.5 hidden text-sm text-slate-600 sm:block">
               Know the best time to buy tickets — to anything.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <a
               href="world-cup/"
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
             >
               <Trophy className="h-4 w-4" />
               <span className="hidden sm:inline">World Cup 2026</span>
@@ -746,7 +746,7 @@ export default function SeatGenius() {
             </a>
             <Badge
               variant="outline"
-              className="hidden sm:inline-flex border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              className="hidden sm:inline-flex border-emerald-200 bg-emerald-50 text-emerald-700"
             >
               <Sparkles className="h-3 w-3" />
               Powered by AI
@@ -757,10 +757,10 @@ export default function SeatGenius() {
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
         <section className="mb-6 max-w-3xl">
-          <h2 className="text-2xl text-white sm:text-3xl">
+          <h2 className="text-2xl text-slate-900 sm:text-3xl">
             When should you buy your next ticket?
           </h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-600">
             Search any artist, team, or show. We track prices over time and tell
             you whether to buy now or wait.
           </p>
@@ -777,7 +777,7 @@ export default function SeatGenius() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Try “Bad Bunny”, “Lakers”, “Wicked”…"
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/70 py-2.5 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
             <Button
@@ -792,7 +792,7 @@ export default function SeatGenius() {
 
         <div className="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,29rem)_minmax(0,1fr)]">
           <div className="min-w-0">
-            <div className="mb-5 flex rounded-lg border border-slate-800 bg-slate-900/50 p-1">
+            <div className="mb-5 flex rounded-lg border border-slate-200 bg-white p-1">
               {(
                 [
                   ["discover", "Discover"],
@@ -807,7 +807,7 @@ export default function SeatGenius() {
                     "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                     view === key
                       ? "bg-blue-600 text-white"
-                      : "text-slate-400 hover:text-slate-100",
+                      : "text-slate-600 hover:text-slate-900",
                   )}
                 >
                   {label}
@@ -860,13 +860,13 @@ export default function SeatGenius() {
 
 function EmptyPanel() {
   return (
-    <Card className="border-dashed border-slate-800 bg-slate-900/30">
+    <Card className="border-dashed border-slate-200 bg-slate-50">
       <CardContent className="flex flex-col items-center px-8 py-20 text-center">
-        <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-slate-800 bg-slate-900/70">
-          <MousePointerClick className="h-6 w-6 text-blue-400" />
+        <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white">
+          <MousePointerClick className="h-6 w-6 text-blue-600" />
         </span>
-        <h3 className="mt-5 text-lg text-white">Pick an event to see when to buy</h3>
-        <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+        <h3 className="mt-5 text-lg text-slate-900">Pick an event to see when to buy</h3>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-600">
           Its buy-or-wait call, price history, and the cheapest place to get
           seats all show up right here — you never leave this page.
         </p>
@@ -912,7 +912,7 @@ function DiscoverView({
   return (
     <>
       {error && (
-        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -922,19 +922,19 @@ function DiscoverView({
       {!searching && searched && (
         <>
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg text-white">
+            <h3 className="text-lg text-slate-900">
               Results for “{searched}”{" "}
               <span className="text-sm text-slate-500">{results.length}</span>
             </h3>
             <button
               onClick={onClear}
-              className="text-sm text-slate-400 hover:text-slate-200"
+              className="text-sm text-slate-600 hover:text-slate-900"
             >
               Clear
             </button>
           </div>
           {results.length === 0 ? (
-            <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-8 text-center text-sm italic text-slate-500">
+            <div className="rounded-lg border border-slate-200 bg-white px-5 py-8 text-center text-sm italic text-slate-500">
               No upcoming events found for that search.
             </div>
           ) : (
@@ -946,8 +946,8 @@ function DiscoverView({
       {!searched && (
         <>
           <div className="mb-4 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-blue-400" />
-            <h3 className="text-lg text-white">Trending nationwide</h3>
+            <TrendingUp className="h-5 w-5 text-blue-600" />
+            <h3 className="text-lg text-slate-900">Trending nationwide</h3>
           </div>
           {loadingTrending && <LoadingRow label="Loading trending events…" />}
           {!loadingTrending && <EventList events={trending} {...list} />}
@@ -972,15 +972,15 @@ function WatchView({
     <>
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-xl text-white">Price Watch</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <h2 className="text-xl text-slate-900">Price Watch</h2>
+          <p className="mt-1 text-sm text-slate-600">
             Events we're tracking. Prices get logged automatically around the
             clock — tap one to see its curve and the buy-or-wait call.
           </p>
         </div>
         <button
           onClick={onRefresh}
-          className="text-sm text-slate-400 hover:text-slate-200"
+          className="text-sm text-slate-600 hover:text-slate-900"
         >
           Refresh
         </button>
@@ -989,11 +989,11 @@ function WatchView({
       {loading && <LoadingRow label="Loading your watchlist…" />}
 
       {!loading && tracked.length === 0 && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-10 text-center">
-          <BellPlus className="mx-auto h-8 w-8 text-slate-600" />
-          <p className="mt-3 text-sm text-slate-400">
+        <div className="rounded-lg border border-slate-200 bg-white px-5 py-10 text-center">
+          <BellPlus className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-3 text-sm text-slate-600">
             Nothing tracked yet. Find an event in Discover and hit{" "}
-            <span className="text-slate-200">Track price</span> — we'll start
+            <span className="text-slate-800">Track price</span> — we'll start
             building its price history within the hour.
           </p>
         </div>
@@ -1038,21 +1038,21 @@ function LocalEventsView({
   return (
     <>
       <div className="mb-5">
-        <h2 className="text-xl text-white">This Weekend in Chicago</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <h2 className="text-xl text-slate-900">This Weekend in Chicago</h2>
+        <p className="mt-1 text-sm text-slate-600">
           Sporting events and concerts happening in the city over the next 7 days
         </p>
       </div>
 
       {loading && (
-        <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-4 text-sm text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+        <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
           Finding events around Chicago…
         </div>
       )}
 
       {!loading && !error && inScope.length === 0 && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-8 text-center text-sm italic text-slate-500">
+        <div className="rounded-lg border border-slate-200 bg-white px-5 py-8 text-center text-sm italic text-slate-500">
           No sporting events or concerts found in the next 7 days.
         </div>
       )}
@@ -1071,8 +1071,8 @@ function LocalEventsView({
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                     active
-                      ? "border-blue-500/40 bg-blue-500/15 text-blue-200"
-                      : "border-slate-700 bg-slate-900/50 text-slate-400 hover:text-slate-200",
+                      ? "border-blue-300 bg-blue-100 text-blue-800"
+                      : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
                   )}
                 >
                   {c === "All" ? "All" : metaFor(c).label}
@@ -1091,7 +1091,7 @@ function LocalEventsView({
                       category={cat}
                       className={cn("h-5 w-5", metaFor(cat).accent)}
                     />
-                    <h3 className="text-lg text-white">{metaFor(cat).label}</h3>
+                    <h3 className="text-lg text-slate-900">{metaFor(cat).label}</h3>
                     <span className="text-sm text-slate-500">
                       {grouped[cat].length}
                     </span>
@@ -1105,7 +1105,7 @@ function LocalEventsView({
       )}
 
       {error && (
-        <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -1152,9 +1152,9 @@ function EventCard({
         }
       }}
       className={cn(
-        "min-w-0 cursor-pointer border-slate-800 bg-slate-900/50 backdrop-blur-sm transition-colors hover:border-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+        "min-w-0 cursor-pointer border-slate-200 bg-white backdrop-blur-sm transition-colors hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
         selected &&
-          "border-blue-500/50 bg-blue-500/[0.06] hover:border-blue-500/60 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
+          "border-blue-400 bg-blue-50 hover:border-blue-400 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
       )}
     >
       <CardContent className="flex items-start gap-3 p-4">
@@ -1169,7 +1169,7 @@ function EventCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="min-w-0 text-base leading-snug text-white line-clamp-2 lg:truncate">
+            <h3 className="min-w-0 text-base leading-snug text-slate-900 line-clamp-2 lg:truncate">
               {event.short_title || event.title}
             </h3>
             <span
@@ -1182,7 +1182,7 @@ function EventCard({
             </span>
           </div>
 
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
             <span className="inline-flex items-center gap-1">
               <Calendar className="h-3.5 w-3.5" />
               {formatDate(event.datetime_local)}
@@ -1210,21 +1210,21 @@ function EventCard({
                 </Badge>
               )}
               {event.lowest_price ? (
-                <span className="text-slate-400">
+                <span className="text-slate-600">
                   From{" "}
-                  <span className="font-semibold text-white">${event.lowest_price}</span>
+                  <span className="font-semibold text-slate-900">${event.lowest_price}</span>
                 </span>
               ) : event.average_price ? (
-                <span className="text-slate-400">
+                <span className="text-slate-600">
                   Avg{" "}
-                  <span className="font-semibold text-white">${event.average_price}</span>
+                  <span className="font-semibold text-slate-900">${event.average_price}</span>
                 </span>
               ) : null}
               {score != null && (
-                <span className="text-slate-400">
+                <span className="text-slate-600">
                   Deal{" "}
                   <span className={cn("font-semibold", scoreClass(score))}>{score}</span>
-                  <span className="text-slate-600">/100</span>
+                  <span className="text-slate-400">/100</span>
                 </span>
               )}
             </div>
@@ -1233,8 +1233,8 @@ function EventCard({
 
         <ChevronRight
           className={cn(
-            "mt-1 h-4 w-4 shrink-0 text-slate-600 transition-transform",
-            selected && "rotate-90 text-blue-400 lg:rotate-0",
+            "mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform",
+            selected && "rotate-90 text-blue-600 lg:rotate-0",
           )}
         />
       </CardContent>
@@ -1247,39 +1247,39 @@ const verdictStyles: Record<
   { border: string; bg: string; title: string; badge: string; label: string }
 > = {
   buy: {
-    border: "border-emerald-500/30",
-    bg: "bg-emerald-500/10",
-    title: "text-emerald-300",
-    badge: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200",
+    border: "border-emerald-200",
+    bg: "bg-emerald-50",
+    title: "text-emerald-700",
+    badge: "border-emerald-300 bg-emerald-100 text-emerald-800",
     label: "Buy now",
   },
   soon: {
-    border: "border-blue-500/30",
-    bg: "bg-blue-500/10",
-    title: "text-blue-300",
-    badge: "border-blue-500/40 bg-blue-500/15 text-blue-200",
+    border: "border-blue-200",
+    bg: "bg-blue-50",
+    title: "text-blue-700",
+    badge: "border-blue-300 bg-blue-100 text-blue-800",
     label: "Buy soon",
   },
   wait: {
-    border: "border-amber-500/30",
-    bg: "bg-amber-500/10",
-    title: "text-amber-300",
-    badge: "border-amber-500/40 bg-amber-500/15 text-amber-200",
+    border: "border-amber-200",
+    bg: "bg-amber-50",
+    title: "text-amber-700",
+    badge: "border-amber-300 bg-amber-100 text-amber-800",
     label: "Wait",
   },
   track: {
-    border: "border-purple-500/30",
-    bg: "bg-purple-500/10",
-    title: "text-purple-300",
-    badge: "border-purple-500/40 bg-purple-500/15 text-purple-200",
+    border: "border-purple-200",
+    bg: "bg-purple-50",
+    title: "text-purple-700",
+    badge: "border-purple-300 bg-purple-100 text-purple-800",
     label: "Track it",
   },
 };
 
 const factorToneClass: Record<string, string> = {
-  good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  neutral: "border-slate-600/40 bg-slate-500/10 text-slate-300",
-  bad: "border-orange-500/30 bg-orange-500/10 text-orange-300",
+  good: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  neutral: "border-slate-300 bg-slate-100 text-slate-700",
+  bad: "border-orange-200 bg-orange-50 text-orange-700",
 };
 
 function BuyTimingCard({
@@ -1313,7 +1313,7 @@ function BuyTimingCard({
             <h3 className={cn("mt-3 text-2xl font-semibold", s.title)}>
               {verdict.title}
             </h3>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">
               {verdict.detail}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -1335,8 +1335,8 @@ function BuyTimingCard({
             disabled={trackBusy}
             variant="outline"
             className={cn(
-              "border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800",
-              isTracked && "border-emerald-500/40 text-emerald-300",
+              "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+              isTracked && "border-emerald-300 text-emerald-700",
             )}
           >
             {trackBusy ? (
@@ -1362,10 +1362,10 @@ function PriceHistoryCard({
   isTracked: boolean;
 }) {
   return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-white">
-          <LineChart className="h-5 w-5 text-blue-400" />
+        <CardTitle className="flex items-center gap-2 text-slate-900">
+          <LineChart className="h-5 w-5 text-blue-600" />
           Get-In Price History
         </CardTitle>
       </CardHeader>
@@ -1429,7 +1429,7 @@ function EventDetail({
     <div className="space-y-4">
       {/* Title header: desktop only. On phones the detail sits directly under
           the card that already shows the title, so repeating it is noise. */}
-      <Card className="hidden border-slate-800 bg-slate-900/50 backdrop-blur-sm lg:block">
+      <Card className="hidden border-slate-200 bg-white backdrop-blur-sm lg:block">
         <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
           <div className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1442,7 +1442,7 @@ function EventDetail({
                 >
                   <CategoryIcon category={event.category} className="h-5 w-5" />
                 </span>
-                <h2 className="text-2xl text-white">
+                <h2 className="text-2xl text-slate-900">
                   {event.short_title || event.title}
                 </h2>
               </div>
@@ -1455,7 +1455,7 @@ function EventDetail({
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+            <div className="flex flex-wrap gap-4 text-sm text-slate-700">
               <span className="inline-flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-slate-500" />
                 {formatDate(event.datetime_local)}
@@ -1501,7 +1501,7 @@ function EventDetail({
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -1550,7 +1550,7 @@ function ListingsCard({
 }) {
   const hasListings = listings.length > 0;
   return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardContent className="p-6">
         <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
           {hasListings
@@ -1559,20 +1559,20 @@ function ListingsCard({
         </div>
 
         {hasListings ? (
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-200">
             {listings.map((l, i) => (
               <div
                 key={i}
                 className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
               >
                 <div className="min-w-0">
-                  <div className="truncate text-sm text-slate-200">{l.section}</div>
+                  <div className="truncate text-sm text-slate-800">{l.section}</div>
                   <div className="text-[10px] uppercase tracking-wider text-slate-500">
                     {l.source}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-base font-semibold text-white">
+                  <div className="text-base font-semibold text-slate-900">
                     ${l.price}
                     {l.max_price && l.max_price !== l.price ? ` – $${l.max_price}` : ""}
                   </div>
@@ -1594,7 +1594,7 @@ function ListingsCard({
             {buyUrl && (
               <Button
                 variant="outline"
-                className="flex-1 border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800"
+                className="flex-1 border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
                 asChild
               >
                 <a href={buyUrl} target="_blank" rel="noopener noreferrer">
@@ -1606,7 +1606,7 @@ function ListingsCard({
             {tmUrl && (
               <Button
                 variant="outline"
-                className="flex-1 border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800"
+                className="flex-1 border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
                 asChild
               >
                 <a href={tmUrl} target="_blank" rel="noopener noreferrer">
@@ -1630,10 +1630,10 @@ function PriceComparisonCard({
   bestPlatform: string | null;
 }) {
   return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-white">
-          <TrendingUp className="h-5 w-5 text-blue-400" />
+        <CardTitle className="flex items-center gap-2 text-slate-900">
+          <TrendingUp className="h-5 w-5 text-blue-600" />
           Price Comparison Across Platforms
         </CardTitle>
       </CardHeader>
@@ -1649,30 +1649,30 @@ function PriceComparisonCard({
             <div
               key={i}
               className={cn(
-                "flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-950/50 p-4 transition-colors hover:border-slate-700",
+                "flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300",
                 muted && "opacity-60",
               )}
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-white">{p.platform}</p>
+                  <p className="text-slate-900">{p.platform}</p>
                   {p.platform === bestPlatform && (
                     <Badge
                       variant="outline"
-                      className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-300"
+                      className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
                     >
                       Best
                     </Badge>
                   )}
                 </div>
-                <p className="mt-1 text-sm text-slate-400">{priceText}</p>
+                <p className="mt-1 text-sm text-slate-600">{priceText}</p>
               </div>
               {p.buy_url ? (
                 <Button
                   variant="outline"
                   size="sm"
                   asChild
-                  className="border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800"
+                  className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
                 >
                   <a href={p.buy_url} target="_blank" rel="noopener noreferrer">
                     View
@@ -1680,7 +1680,7 @@ function PriceComparisonCard({
                   </a>
                 </Button>
               ) : (
-                <span className="text-sm text-slate-600">—</span>
+                <span className="text-sm text-slate-400">—</span>
               )}
             </div>
           );
@@ -1694,10 +1694,10 @@ function AnalysisCard({ text, eventTitle }: { text: string; eventTitle: string }
   const insights = parseAnalysis(text);
 
   return (
-    <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-white">
-          <Sparkles className="h-5 w-5 text-blue-400" />
+        <CardTitle className="flex items-center gap-2 text-slate-900">
+          <Sparkles className="h-5 w-5 text-blue-600" />
           AI Buy-Timing Analysis: {eventTitle}
         </CardTitle>
       </CardHeader>
@@ -1707,7 +1707,7 @@ function AnalysisCard({ text, eventTitle }: { text: string; eventTitle: string }
             <InsightBlock key={idx} insight={insight} index={idx} />
           ))
         ) : (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
             {formatAnalysis(text)}
           </div>
         )}
@@ -1755,8 +1755,8 @@ function InsightBlock({ insight, index }: { insight: Insight; index: number }) {
 
 function LoadingRow({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-5 py-4 text-sm italic text-slate-400">
-      <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm italic text-slate-600">
+      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
       {label}
     </div>
   );

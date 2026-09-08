@@ -20,7 +20,7 @@ function niceTicks(min: number, max: number, count = 4): number[] {
 
 // Single-series get-in price line with a crosshair + tooltip hover layer, plus
 // a labeled dashed reference line for the typical (average) price when we have
-// one. Dark-surface only, matching the app's slate theme.
+// one. Light-surface palette, matching the app theme.
 export function PriceChart({ readings }: { readings: Reading[] }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -116,7 +116,7 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
               x2={W - PAD.right}
               y1={model.y(v)}
               y2={model.y(v)}
-              stroke="#1e293b"
+              stroke="#e2e8f0"
               strokeWidth="1"
             />
             <text
@@ -147,18 +147,18 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
               y={model.y(model.typical) - 6}
               textAnchor="end"
               fontSize="10"
-              fill="#94a3b8"
+              fill="#64748b"
             >
               typical ${Math.round(model.typical)}
             </text>
           </g>
         )}
 
-        <path d={model.area} fill="#60a5fa" opacity="0.08" />
+        <path d={model.area} fill="#2563eb" opacity="0.08" />
         <path
           d={model.path}
           fill="none"
-          stroke="#60a5fa"
+          stroke="#2563eb"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -170,8 +170,8 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
             cx={model.pts[model.pts.length - 1].x}
             cy={model.pts[model.pts.length - 1].y}
             r="4"
-            fill="#60a5fa"
-            stroke="#0f172a"
+            fill="#2563eb"
+            stroke="#ffffff"
             strokeWidth="2"
           />
           <text
@@ -179,7 +179,7 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
             y={model.pts[model.pts.length - 1].y - 8}
             fontSize="12"
             fontWeight="600"
-            fill="#e2e8f0"
+            fill="#0f172a"
           >
             ${readings[readings.length - 1].p}
           </text>
@@ -205,24 +205,24 @@ export function PriceChart({ readings }: { readings: Reading[] }) {
               x2={hp.x}
               y1={PAD.top}
               y2={H - PAD.bottom}
-              stroke="#475569"
+              stroke="#94a3b8"
               strokeWidth="1"
             />
-            <circle cx={hp.x} cy={hp.y} r="4.5" fill="#60a5fa" stroke="#0f172a" strokeWidth="2" />
+            <circle cx={hp.x} cy={hp.y} r="4.5" fill="#2563eb" stroke="#ffffff" strokeWidth="2" />
           </g>
         )}
       </svg>
 
       {hp && hover != null && (
         <div
-          className="pointer-events-none absolute -translate-x-1/2 rounded-md border border-slate-700 bg-slate-950/95 px-2.5 py-1.5 text-xs shadow-lg"
+          className="pointer-events-none absolute -translate-x-1/2 rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-xs shadow-lg"
           style={{
             left: `${(hp.x / W) * 100}%`,
             top: `${Math.max(0, (hp.y / H) * 100 - 22)}%`,
           }}
         >
-          <div className="font-semibold text-white">${readings[hover].p}</div>
-          <div className="text-slate-400">{fmtFull(readings[hover].t)}</div>
+          <div className="font-semibold text-slate-900">${readings[hover].p}</div>
+          <div className="text-slate-600">{fmtFull(readings[hover].t)}</div>
         </div>
       )}
     </div>
