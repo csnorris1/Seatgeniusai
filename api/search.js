@@ -860,13 +860,15 @@ Keep it concise and conversational. Bold the key insights.`;
         const iv = intervalOf(e);
         return iv === 24 ? h === 12 : h % iv === 0;
       };
-      // Cost cap: at most two Claude calls of 8 events each per sweep (search
-      // quality drops past ~8 events per call). When more are due than fit,
-      // the most overdue events go first — how many of its own intervals an
-      // event has waited since its last reading — with closeness as the
-      // tiebreak. That keeps a tournament's hourly sessions from starving
-      // the events weeks out that happen to share the hour, and vice versa.
-      const BATCH = 8, MAX_BATCHES = 2;
+      // Cost cap: at most three Claude calls per sweep — 5 events per call
+      // (8 distinct sessions on 8 searches came back empty), deep-watch
+      // events in their own calls of 4 (each needs several marketplace
+      // checks). When more are due than fit, the most overdue events go
+      // first — how many of its own intervals an event has waited since its
+      // last reading — with closeness as the tiebreak. That keeps a
+      // tournament's hourly sessions from starving the events weeks out that
+      // happen to share the hour, and vice versa.
+      const BATCH = 5, DEEP_BATCH = 4, MAX_BATCHES = 3;
       const hoursOut = (e) => {
         const dt = e.datetime_local ? new Date(e.datetime_local).getTime() : NaN;
         return isNaN(dt) ? Infinity : (dt - now.getTime()) / 3600000;
@@ -897,7 +899,7 @@ Keep it concise and conversational. Bold the key insights.`;
       // Tournament sessions: two sessions a day are different tickets, and
       // who is playing moves the price more than anything — capture it when
       // it shows up while pricing, never by spending a search on it.
-      const sessionRuleText = ' For tournament sessions (tennis etc.): a day session and a night session on the same date are different tickets — price only the session whose number, start time and label are given, never a grounds pass or a different session. If the marketplace listing or the tournament schedule shows who is playing in that session, fill "matchup" (e.g. "Alcaraz vs Shelton; Pegula vs Navarro"); if the draw is not set yet, omit it. Do not spend a search just to find the matchup.';
+      const sessionRuleText = ' For tournament sessions (tennis etc.): a day session and a night session on the same date are different tickets — price only the session whose number, start time and label are given, never a grounds pass or a different session. A marketplace\'s "from $X" / get-in price shown for that session number (Vivid Seats, SeatGeek, StubHub, TickPick list US Open tickets by session) counts as confirmed — report it. At Arthur Ashe Stadium the cheapest seat in any session is a Promenade seat, so the get-in price of a session IS the Promenade price. If the marketplace listing or the tournament schedule shows who is playing in that session, fill "matchup" (e.g. "Alcaraz vs Shelton; Pegula vs Navarro"); if the draw is not set yet, omit it. Do not spend a search just to find the matchup.';
       const isSession = (e) => Boolean(e.group) && /session\s*\d+/i.test(e.title || '');
 
       // Scan for the first balanced JSON object carrying a "prices" array;
@@ -966,8 +968,11 @@ Keep it concise and conversational. Bold the key insights.`;
         return { prices: parsed.prices, stop_reason: aiData.stop_reason || null, preview: text.slice(0, 300) };
       };
 
-      const batches = [];
-      for (let i = 0; i < due.length; i += BATCH) batches.push(due.slice(i, i + BATCH));
+      const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+      const batches = [
+        ...chunk(due.filter(e => e.priority), DEEP_BATCH),
+        ...chunk(due.filter(e => !e.priority), BATCH),
+      ].slice(0, MAX_BATCHES);
       const priced = {};
       const errors = [];
       const batchStatus = [];
