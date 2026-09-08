@@ -203,6 +203,7 @@ exports.handler = async (event) => {
           p: r.p ?? r.lowest_price,
           avg: r.avg ?? r.average_price ?? null,
           ...(Array.isArray(r.sites) && r.sites.length ? { sites: r.sites } : {}),
+          ...(r.tier ? { tier: r.tier } : {}),
         }))
         .sort((a, b) => (a.t < b.t ? -1 : 1))
         .slice(-120);
@@ -566,12 +567,24 @@ Keep it concise and conversational. Bold the key insights.`;
       // priority=1 puts the event in "deep watch": priced every 2 hours with a
       // per-marketplace breakdown (see the sweep). Costs ~$1.50/day per event,
       // so it's opt-in and meant for one or two events at a time.
+      // tier = the ticket type the user would actually buy ("Grounds pass",
+      // "Upper level", "GA floor"…). The sweep prices that type only, so a
+      // hospitality suite never inflates a grounds-pass curve. Changing the
+      // tier on an existing entry starts a fresh curve (readings carry tier).
+      // group = key shared by the days of a multi-day event (a golf
+      // tournament, a festival) so the UI can show them side by side.
       const wantPriority = params.priority === '1';
+      const tier = (params.tier || '').trim().slice(0, 40) || null;
+      const group = (params.group || '').trim().slice(0, 60) || null;
       const existing = list.find(e => String(e.id) === String(event_id));
       if (existing) {
-        if (wantPriority && !existing.priority) { existing.priority = true; await t.putTracked(list); }
-        else if (params.priority === '0' && existing.priority) { delete existing.priority; await t.putTracked(list); }
-        return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority) });
+        let changed = false;
+        if (wantPriority && !existing.priority) { existing.priority = true; changed = true; }
+        else if (params.priority === '0' && existing.priority) { delete existing.priority; changed = true; }
+        if (params.tier != null && (existing.tier || null) !== tier) { if (tier) existing.tier = tier; else delete existing.tier; changed = true; }
+        if (params.group != null && (existing.group || null) !== group) { if (group) existing.group = group; else delete existing.group; changed = true; }
+        if (changed) await t.putTracked(list);
+        return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority), tier: existing.tier || null, group: existing.group || null });
       }
       if (list.length >= 25) {
         return respond(409, { error: 'Watchlist is full (25 events). Untrack something first.' });
@@ -587,9 +600,11 @@ Keep it concise and conversational. Bold the key insights.`;
         url: params.url || null,
         tracked_at: new Date().toISOString(),
         ...(wantPriority ? { priority: true } : {}),
+        ...(tier ? { tier } : {}),
+        ...(group ? { group } : {}),
       });
       await t.putTracked(list);
-      return respond(200, { ok: true, count: list.length, priority: wantPriority });
+      return respond(200, { ok: true, count: list.length, priority: wantPriority, tier, group });
     }
 
     if (action === 'untrack') {
@@ -604,10 +619,17 @@ Keep it concise and conversational. Bold the key insights.`;
     if (action === 'history') {
       if (!event_id) return respond(400, { error: 'event_id is required' });
       const t = priceHistoryTools();
-      const [readings, list] = await Promise.all([t.getHistory(event_id), t.getTracked()]);
+      const [all, list] = await Promise.all([t.getHistory(event_id), t.getTracked()]);
+      const entry = list.find(e => String(e.id) === String(event_id)) || null;
+      // A tier change starts a fresh curve: only show readings taken for the
+      // ticket type currently being tracked (legacy readings have no tier).
+      const readings = entry && entry.tier ? all.filter(r => r.tier === entry.tier) : all;
       return respond(200, {
         readings,
-        tracked: list.some(e => String(e.id) === String(event_id)),
+        tracked: Boolean(entry),
+        tier: entry ? entry.tier || null : null,
+        group: entry ? entry.group || null : null,
+        priority: Boolean(entry && entry.priority),
         at: new Date().toISOString(),
       });
     }
@@ -823,12 +845,16 @@ Keep it concise and conversational. Bold the key insights.`;
         const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
         const where = [e.venue, e.city].filter(Boolean).join(', ');
         const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
-        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when}${tag}`;
+        const tier = e.tier ? ` — ticket type: ${e.tier} ONLY` : '';
+        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when} (this specific date only)${tier}${tag}`;
       }).join('\n');
       const deepRule = deep
-        ? ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for the event, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.'
+        ? ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for that event and ticket type, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.'
         : '';
-      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "sites" only for events marked [DEEP], otherwise omit it.${deepRule} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+      const tierRule = due.some(e => e.tier)
+        ? ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club.'
+        : '';
+      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${tierRule}${deepRule} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
 
       const priced = {};
       try {
@@ -902,12 +928,19 @@ Keep it concise and conversational. Bold the key insights.`;
         if (g.avg != null) item.avg = g.avg;
         if (g.chg != null) item.chg = g.chg;
         if (sites.length) item.sites = sites;
+        if (e.tier) item.tier = e.tier;
         if (e.datetime_local) item.event_date = e.datetime_local;
         try {
           await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item, { removeUndefinedValues: true }) }));
           written++;
+          // Keep the latest price on the registry entry so the watchlist can
+          // show day-by-day prices without a history query per event.
+          e.last_p = item.p;
+          if (item.avg != null) e.last_avg = item.avg;
+          e.last_at = nowISO;
         } catch { noprice++; }
       }
+      if (written) await t.putTracked(upcoming);
 
       return respond(200, { logged: written, due: due.length, tracked: upcoming.length, no_price: noprice, at: nowISO });
     }

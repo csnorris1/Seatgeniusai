@@ -61,6 +61,10 @@ type Event = {
   average_price?: number;
   url?: string;
   provider_links?: ProviderLink[];
+  /** Ticket type being tracked ("Grounds pass", "Upper level"…). */
+  tier?: string;
+  /** Shared key for the days of a multi-day event. */
+  group?: string;
 };
 
 type TrackedEvent = {
@@ -73,6 +77,12 @@ type TrackedEvent = {
   popularity?: number | null;
   url?: string | null;
   tracked_at?: string;
+  priority?: boolean;
+  tier?: string | null;
+  group?: string | null;
+  last_p?: number | null;
+  last_avg?: number | null;
+  last_at?: string | null;
 };
 
 type LocalEvent = {
@@ -348,7 +358,28 @@ const trackedToEvent = (t: TrackedEvent): Event => ({
   state: "",
   popularity: t.popularity ?? undefined,
   url: t.url || undefined,
+  tier: t.tier || undefined,
+  group: t.group || undefined,
 });
+
+// Ticket types a person can choose to track, by event category. "" means
+// "cheapest available" (the pre-tier behaviour). Golf/tennis/festival-style
+// events get grounds vs hospitality; seated venues get level choices.
+function tierOptionsFor(category?: string | null, title?: string): string[] {
+  const t = (title || "").toLowerCase();
+  const openGrounds = /golf|cup|open|championship|invitational|classic|masters|festival|fest\b|grand prix|marathon/.test(t);
+  if (category === "Sports" && openGrounds) return ["Grounds pass", "Hospitality"];
+  if (category === "Sports") return ["Upper level", "Lower level", "Club or suite"];
+  if (category === "Concerts") return ["GA floor", "Lower bowl", "Upper bowl"];
+  if (category === "Theater" || category === "Arts") return ["Orchestra", "Mezzanine", "Balcony"];
+  if (category === "Comedy") return ["Floor", "Balcony"];
+  return [];
+}
+
+// "2026 Presidents Cup - Saturday" -> "2026 Presidents Cup" for a group card.
+const groupTitle = (title: string) => title.replace(/\s+[-–—]\s+[^-–—]+$/, "").trim() || title;
+const dayLabel = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { weekday: "short" }) : "TBD";
 
 const localToEvent = (e: LocalEvent): Event => ({
   id: e.id,
@@ -399,6 +430,9 @@ export default function SeatGenius() {
   const [bestPlatform, setBestPlatform] = useState<string | null>(null);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [isTracked, setIsTracked] = useState(false);
+  // Ticket type for the selected event: what's being tracked if it is, else
+  // the user's pick before they hit "Track price" ("" = cheapest available).
+  const [tier, setTier] = useState("");
   const [trackBusy, setTrackBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -431,7 +465,9 @@ export default function SeatGenius() {
   }, []);
 
   useEffect(() => {
-    if (view === "watch" && !trackedLoaded) loadTracked();
+    // Load once up front (not just on the Price Watch tab): the detail panel
+    // needs the watchlist to show a multi-day event's sibling days.
+    if (!trackedLoaded) loadTracked();
   }, [view, trackedLoaded, loadTracked]);
 
   // Lazily load Chicago-area events the first time the user opens that tab.
@@ -486,6 +522,7 @@ export default function SeatGenius() {
     setBestPlatform(null);
     setReadings([]);
     setIsTracked(false);
+    setTier("");
     setDetailError(null);
     setLoadingListings(true);
     try {
@@ -504,6 +541,7 @@ export default function SeatGenius() {
       const historyData = await historyRes.json();
       setReadings(historyData.readings || []);
       setIsTracked(Boolean(historyData.tracked));
+      setTier(historyData.tier || "");
     } catch {
       setDetailError("Couldn't load event details. Try again.");
     } finally {
@@ -544,6 +582,8 @@ export default function SeatGenius() {
         });
         if (selectedEvent.popularity != null)
           qs.set("popularity", String(selectedEvent.popularity));
+        if (tier) qs.set("tier", tier);
+        if (selectedEvent.group) qs.set("group", selectedEvent.group);
         const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
         const data = await res.json();
         if (res.ok && data.ok) setIsTracked(true);
@@ -678,6 +718,14 @@ export default function SeatGenius() {
 
   const selectedId = selectedEvent?.id ?? null;
 
+  // Other days of the same multi-day event, for the compare-days strip.
+  const siblings = useMemo(() => {
+    if (!selectedEvent?.group) return [];
+    return tracked
+      .filter((t) => t.group === selectedEvent.group)
+      .sort((a, b) => ((a.datetime_local || "") < (b.datetime_local || "") ? -1 : 1));
+  }, [tracked, selectedEvent]);
+
   const detail =
     selectedEvent && verdict ? (
       <EventDetail
@@ -687,6 +735,11 @@ export default function SeatGenius() {
         isTracked={isTracked}
         trackBusy={trackBusy}
         onToggleTrack={toggleTrack}
+        tier={tier}
+        tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title)}
+        onTierChange={setTier}
+        siblings={siblings}
+        onSelectSibling={(t) => selectEvent(trackedToEvent(t))}
         listings={listings}
         buyUrl={buyUrl}
         tmUrl={tmUrl}
@@ -875,6 +928,115 @@ function EmptyPanel() {
   );
 }
 
+// Day-by-day strip for a multi-day event: each day's latest tracked price,
+// the open day highlighted. Click a day to swap the detail to that day.
+function DayStrip({
+  days,
+  selectedId,
+  onSelect,
+}: {
+  days: TrackedEvent[];
+  selectedId: string | number | null;
+  onSelect: (t: TrackedEvent) => void;
+}) {
+  const priced = days.filter((d) => d.last_p != null);
+  const cheapest = priced.length ? Math.min(...priced.map((d) => d.last_p as number)) : null;
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+      {days.map((d) => {
+        const open = sameId(d.id, selectedId);
+        const isCheapest = d.last_p != null && d.last_p === cheapest && priced.length > 1;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            onClick={() => onSelect(d)}
+            aria-pressed={open}
+            className={cn(
+              "flex min-w-[4.5rem] flex-1 flex-col items-center rounded-lg border px-2 py-2 text-center transition-colors",
+              open
+                ? "border-blue-400 bg-blue-50"
+                : "border-slate-200 bg-white hover:border-slate-400",
+            )}
+          >
+            <span className={cn("text-[11px] font-medium uppercase tracking-wider", open ? "text-blue-700" : "text-slate-500")}>
+              {dayLabel(d.datetime_local)}
+            </span>
+            <span className="text-[11px] text-slate-500">
+              {d.datetime_local ? new Date(d.datetime_local).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+            </span>
+            <span className={cn("mt-1 text-sm font-semibold tabular-nums", isCheapest ? "text-emerald-700" : "text-slate-900")}>
+              {d.last_p != null ? `$${d.last_p}` : "—"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// One card for all the days of a multi-day event on the Price Watch tab.
+function GroupCard({
+  days,
+  selectedId,
+  onSelect,
+  inlineDetail,
+}: ListProps & { days: TrackedEvent[] }) {
+  const first = days[0];
+  const open = days.some((d) => sameId(d.id, selectedId));
+  const tier = days.find((d) => d.tier)?.tier;
+  return (
+    <>
+      <Card
+        className={cn(
+          "min-w-0 border-slate-200 bg-white backdrop-blur-sm",
+          open && "border-blue-500/50 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
+        )}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                metaFor(first.category).chip,
+              )}
+            >
+              <CategoryIcon category={first.category} className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base leading-snug text-slate-900">{groupTitle(first.title)}</h3>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
+                <span className="inline-flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5" />
+                  {days.length} days
+                </span>
+                {first.venue && (
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {first.venue}
+                      {first.city ? `, ${first.city}` : ""}
+                    </span>
+                  </span>
+                )}
+                {tier && (
+                  <Badge variant="outline" className="border-slate-300 bg-slate-100 px-2 py-0 text-[10px] text-slate-700">
+                    {tier}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3">
+            <DayStrip days={days} selectedId={selectedId} onSelect={(d) => onSelect(trackedToEvent(d))} />
+          </div>
+        </CardContent>
+      </Card>
+      {open && inlineDetail}
+    </>
+  );
+}
+
 function EventList({ events, selectedId, onSelect, inlineDetail }: ListProps & { events: Event[] }) {
   return (
     <div className="grid gap-3">
@@ -967,7 +1129,27 @@ function WatchView({
   loading: boolean;
   onRefresh: () => void;
 }) {
-  const events = useMemo(() => tracked.map(trackedToEvent), [tracked]);
+  // Multi-day events (same group key) collapse into one card with a day
+  // strip; everything else is a plain card. Order: by first date.
+  const rows = useMemo(() => {
+    const groups = new Map<string, TrackedEvent[]>();
+    const singles: TrackedEvent[] = [];
+    for (const t of tracked) {
+      if (t.group) {
+        const g = groups.get(t.group) || [];
+        g.push(t);
+        groups.set(t.group, g);
+      } else singles.push(t);
+    }
+    const byDate = (a?: string | null, b?: string | null) => ((a || "") < (b || "") ? -1 : 1);
+    const out: { key: string; date: string; days?: TrackedEvent[]; single?: TrackedEvent }[] = [];
+    for (const [key, days] of groups) {
+      days.sort((a, b) => byDate(a.datetime_local, b.datetime_local));
+      out.push({ key: `g:${key}`, date: days[0].datetime_local || "", days });
+    }
+    for (const s of singles) out.push({ key: String(s.id), date: s.datetime_local || "", single: s });
+    return out.sort((a, b) => byDate(a.date, b.date));
+  }, [tracked]);
   return (
     <>
       <div className="mb-5 flex items-end justify-between gap-4">
@@ -999,7 +1181,24 @@ function WatchView({
         </div>
       )}
 
-      {!loading && events.length > 0 && <EventList events={events} {...list} />}
+      {!loading && rows.length > 0 && (
+        <div className="grid gap-3">
+          {rows.map((row) =>
+            row.days ? (
+              <GroupCard key={row.key} days={row.days} {...list} />
+            ) : row.single ? (
+              <Fragment key={row.key}>
+                <EventCard
+                  event={trackedToEvent(row.single)}
+                  selected={sameId(row.single.id, list.selectedId)}
+                  onSelect={list.onSelect}
+                />
+                {sameId(row.single.id, list.selectedId) && list.inlineDetail}
+              </Fragment>
+            ) : null,
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -1199,8 +1398,13 @@ function EventCard({
             )}
           </div>
 
-          {(demand || event.lowest_price || event.average_price || score != null) && (
+          {(demand || event.tier || event.lowest_price || event.average_price || score != null) && (
             <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+              {event.tier && (
+                <Badge variant="outline" className="border-slate-300 bg-slate-100 px-2 py-0 text-[10px] text-slate-700">
+                  {event.tier}
+                </Badge>
+              )}
               {demand && (
                 <Badge
                   variant="outline"
@@ -1287,11 +1491,17 @@ function BuyTimingCard({
   isTracked,
   trackBusy,
   onToggleTrack,
+  tier,
+  tierOptions,
+  onTierChange,
 }: {
   verdict: BuyVerdict;
   isTracked: boolean;
   trackBusy: boolean;
   onToggleTrack: () => void;
+  tier: string;
+  tierOptions: string[];
+  onTierChange: (t: string) => void;
 }) {
   const s = verdictStyles[verdict.action];
   return (
@@ -1330,24 +1540,48 @@ function BuyTimingCard({
               ))}
             </div>
           </div>
-          <Button
-            onClick={onToggleTrack}
-            disabled={trackBusy}
-            variant="outline"
-            className={cn(
-              "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
-              isTracked && "border-emerald-300 text-emerald-700",
+          <div className="flex shrink-0 flex-col items-stretch gap-2">
+            {/* Ticket type: pick before tracking; read-only once tracking, since
+                changing it would start a new curve (untrack to switch). */}
+            {tierOptions.length > 0 && !isTracked && (
+              <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                Ticket type
+                <select
+                  value={tier}
+                  onChange={(e) => onTierChange(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-normal normal-case tracking-normal text-slate-900 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Cheapest available</option>
+                  {tierOptions.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </label>
             )}
-          >
-            {trackBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isTracked ? (
-              <BellRing className="h-4 w-4" />
-            ) : (
-              <BellPlus className="h-4 w-4" />
+            {isTracked && tier && (
+              <span className="text-center text-xs text-slate-600">
+                Tracking <span className="font-medium text-slate-900">{tier}</span> prices
+              </span>
             )}
-            {isTracked ? "Tracking prices" : "Track price"}
-          </Button>
+            <Button
+              onClick={onToggleTrack}
+              disabled={trackBusy}
+              variant="outline"
+              className={cn(
+                "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+                isTracked && "border-emerald-300 text-emerald-700",
+              )}
+            >
+              {trackBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isTracked ? (
+                <BellRing className="h-4 w-4" />
+              ) : (
+                <BellPlus className="h-4 w-4" />
+              )}
+              {isTracked ? "Tracking prices" : "Track price"}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -1404,6 +1638,11 @@ function EventDetail({
   error,
   score,
   onAnalyze,
+  tier,
+  tierOptions,
+  onTierChange,
+  siblings,
+  onSelectSibling,
 }: {
   event: Event;
   verdict: BuyVerdict;
@@ -1411,6 +1650,11 @@ function EventDetail({
   isTracked: boolean;
   trackBusy: boolean;
   onToggleTrack: () => void;
+  tier: string;
+  tierOptions: string[];
+  onTierChange: (t: string) => void;
+  siblings: TrackedEvent[];
+  onSelectSibling: (t: TrackedEvent) => void;
   listings: Listing[];
   buyUrl: string | null;
   tmUrl: string | null;
@@ -1486,11 +1730,31 @@ function EventDetail({
         <LoadingRow label="Pulling prices and trend data…" />
       ) : (
         <>
+          {siblings.length > 1 && (
+            <Card className="border-slate-200 bg-white backdrop-blur-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-slate-900">
+                  <Calendar className="h-5 w-5 text-blue-600" />
+                  Compare days
+                </CardTitle>
+                <p className="text-xs text-slate-500">
+                  Latest tracked price for each day
+                  {tier ? ` (${tier})` : ""}. Click a day to see its curve.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <DayStrip days={siblings} selectedId={event.id} onSelect={onSelectSibling} />
+              </CardContent>
+            </Card>
+          )}
           <BuyTimingCard
             verdict={verdict}
             isTracked={isTracked}
             trackBusy={trackBusy}
             onToggleTrack={onToggleTrack}
+            tier={tier}
+            tierOptions={tierOptions}
+            onTierChange={onTierChange}
           />
           <PriceHistoryCard readings={readings} isTracked={isTracked} />
           <MarketplaceCard readings={readings} />
