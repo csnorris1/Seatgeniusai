@@ -61,7 +61,6 @@ SeatGenius answers one question for **any live event** (concerts, sports, theate
 - SeatGenius.net domain not yet pointed to GitHub Pages
 - Need affiliate program approval for resale pricing data
 - Repo is public + `api/search.js` hardcodes the SeatGeek client ID and Ticketmaster key (both also in git history) — treat as compromised; rotate the SeatGeek key and move both to Lambda env vars (the Anthropic key is already `process.env`)
-- Vercel project still connected and will keep auto-deploying until disconnected in the Vercel dashboard
 
 ## Key Conventions
 
@@ -84,5 +83,6 @@ Figma "code export" snapshots whatever's currently in the design file — it is 
 
 ## CI / Monitoring
 
-- `.github/workflows/site-monitor.yml` — runs hourly, checks frontend (Vercel) and both API endpoints
+- `.github/workflows/site-monitor.yml` — runs hourly, checks the GitHub Pages frontend and both API endpoints
+- **GitHub Pages is the only frontend host.** The old Vercel project was deleted 2026-09-07 — do not reference `seatgeniusai.vercel.app` anywhere.
 - Can also be triggered manually via `workflow_dispatch`
