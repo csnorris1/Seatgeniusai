@@ -189,11 +189,17 @@ exports.handler = async (event) => {
       }));
     };
 
-    const getHistory = async (eventId) => {
+    // A tracked entry is one (event, ticket type). Its readings live under the
+    // composite key "<id>#<tier>"; untiered entries and readings written before
+    // tiers got their own key use the bare event id (with `tier` as an
+    // attribute), so tiered history reads both and merges.
+    const readingKey = (id, tier) => (tier ? `${id}#${tier}` : String(id));
+
+    const queryReadings = async (pk) => {
       const out = await ddb.send(new QueryCommand({
         TableName: TABLE,
         KeyConditionExpression: 'event_id = :id',
-        ExpressionAttributeValues: marshall({ ':id': String(eventId) }),
+        ExpressionAttributeValues: marshall({ ':id': String(pk) }),
       }));
       return (out.Items || [])
         .map(it => unmarshall(it))
@@ -205,12 +211,21 @@ exports.handler = async (event) => {
           ...(Array.isArray(r.sites) && r.sites.length ? { sites: r.sites } : {}),
           ...(r.tier ? { tier: r.tier } : {}),
           ...(r.matchup ? { matchup: r.matchup } : {}),
-        }))
-        .sort((a, b) => (a.t < b.t ? -1 : 1))
-        .slice(-120);
+        }));
     };
 
-    return { ddb, TABLE, marshall, unmarshall, PutItemCommand, getTracked, putTracked, getHistory };
+    const getHistory = async (eventId, tier) => {
+      let rows;
+      if (tier) {
+        const [own, legacy] = await Promise.all([queryReadings(readingKey(eventId, tier)), queryReadings(eventId)]);
+        rows = [...own, ...legacy.filter(r => r.tier === tier)];
+      } else {
+        rows = await queryReadings(eventId);
+      }
+      return rows.sort((a, b) => (a.t < b.t ? -1 : 1)).slice(-120);
+    };
+
+    return { ddb, TABLE, marshall, unmarshall, PutItemCommand, getTracked, putTracked, getHistory, readingKey };
   };
 
   // Compact plain-English trend summary used by the analyze prompt.
@@ -488,7 +503,7 @@ exports.handler = async (event) => {
       if (d.event_id) {
         try {
           const t = priceHistoryTools();
-          const readings = await t.getHistory(d.event_id);
+          const readings = await t.getHistory(d.event_id, (d.tier || '').trim() || null);
           const s = summarizeHistory(readings);
           if (s) historyText = s;
         } catch { /* history is optional context */ }
@@ -558,7 +573,7 @@ Keep it concise and conversational. Bold the key insights.`;
     if (action === 'tracked') {
       const t = priceHistoryTools();
       const list = await t.getTracked();
-      return respond(200, { events: list, count: list.length, max: 25 });
+      return respond(200, { events: list, count: list.length, max: 40 });
     }
 
     if (action === 'track') {
@@ -569,9 +584,11 @@ Keep it concise and conversational. Bold the key insights.`;
       // per-marketplace breakdown (see the sweep). Costs ~$1.50/day per event,
       // so it's opt-in and meant for one or two events at a time.
       // tier = the ticket type the user would actually buy ("Grounds pass",
-      // "Upper level", "GA floor"…). The sweep prices that type only, so a
-      // hospitality suite never inflates a grounds-pass curve. Changing the
-      // tier on an existing entry starts a fresh curve (readings carry tier).
+      // "Promenade", "GA floor"…). The sweep prices that type only, so a
+      // hospitality suite never inflates a grounds-pass curve. An entry is one
+      // (event, tier): tracking a second tier of the same event adds a second
+      // entry with its own curve. group/label are per event, so a change
+      // applies to every tier of it.
       // group = key shared by the days of a multi-day event (a golf
       // tournament, a festival) so the UI can show them side by side.
       // label = short human name for one session of a multi-session event
@@ -581,20 +598,24 @@ Keep it concise and conversational. Bold the key insights.`;
       const tier = (params.tier || '').trim().slice(0, 40) || null;
       const group = (params.group || '').trim().slice(0, 60) || null;
       const label = (params.label || '').trim().slice(0, 60) || null;
-      const existing = list.find(e => String(e.id) === String(event_id));
+      const sameEvent = list.filter(e => String(e.id) === String(event_id));
+      const existing = params.tier != null ? sameEvent.find(e => (e.tier || null) === tier) : sameEvent[0];
+      let changed = false;
+      for (const e of sameEvent) {
+        if (params.group != null && (e.group || null) !== group) { if (group) e.group = group; else delete e.group; changed = true; }
+        if (params.label != null && (e.label || null) !== label) { if (label) e.label = label; else delete e.label; changed = true; }
+      }
       if (existing) {
-        let changed = false;
         if (wantPriority && !existing.priority) { existing.priority = true; changed = true; }
         else if (params.priority === '0' && existing.priority) { delete existing.priority; changed = true; }
-        if (params.tier != null && (existing.tier || null) !== tier) { if (tier) existing.tier = tier; else delete existing.tier; changed = true; }
-        if (params.group != null && (existing.group || null) !== group) { if (group) existing.group = group; else delete existing.group; changed = true; }
-        if (params.label != null && (existing.label || null) !== label) { if (label) existing.label = label; else delete existing.label; changed = true; }
         if (changed) await t.putTracked(list);
         return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority), tier: existing.tier || null, group: existing.group || null, label: existing.label || null });
       }
-      if (list.length >= 25) {
-        return respond(409, { error: 'Watchlist is full (25 events). Untrack something first.' });
+      if (list.length >= 40) {
+        return respond(409, { error: 'Watchlist is full (40 entries). Untrack something first.' });
       }
+      // A new tier of an already-tracked event inherits its session metadata.
+      const sib = sameEvent[0] || null;
       list.push({
         id: String(event_id),
         title: params.title,
@@ -607,18 +628,21 @@ Keep it concise and conversational. Bold the key insights.`;
         tracked_at: new Date().toISOString(),
         ...(wantPriority ? { priority: true } : {}),
         ...(tier ? { tier } : {}),
-        ...(group ? { group } : {}),
-        ...(label ? { label } : {}),
+        ...((group || (sib && sib.group)) ? { group: group || sib.group } : {}),
+        ...((label || (sib && sib.label)) ? { label: label || sib.label } : {}),
+        ...(sib && sib.matchup ? { matchup: sib.matchup, matchup_at: sib.matchup_at } : {}),
       });
       await t.putTracked(list);
-      return respond(200, { ok: true, count: list.length, priority: wantPriority, tier, group, label });
+      return respond(200, { ok: true, count: list.length, priority: wantPriority, tier, group: group || (sib && sib.group) || null, label: label || (sib && sib.label) || null });
     }
 
     if (action === 'untrack') {
       if (!event_id) return respond(400, { error: 'event_id is required' });
       const t = priceHistoryTools();
       const list = await t.getTracked();
-      const next = list.filter(e => String(e.id) !== String(event_id));
+      // tier= removes that ticket type only; without it, every tier of the event.
+      const utier = (params.tier || '').trim() || null;
+      const next = list.filter(e => String(e.id) !== String(event_id) || (params.tier != null && (e.tier || null) !== utier));
       if (next.length !== list.length) await t.putTracked(next);
       return respond(200, { ok: true, count: next.length });
     }
@@ -626,15 +650,20 @@ Keep it concise and conversational. Bold the key insights.`;
     if (action === 'history') {
       if (!event_id) return respond(400, { error: 'event_id is required' });
       const t = priceHistoryTools();
-      const [all, list] = await Promise.all([t.getHistory(event_id), t.getTracked()]);
-      const entry = list.find(e => String(e.id) === String(event_id)) || null;
-      // A tier change starts a fresh curve: only show readings taken for the
-      // ticket type currently being tracked (legacy readings have no tier).
-      const readings = entry && entry.tier ? all.filter(r => r.tier === entry.tier) : all;
+      const list = await t.getTracked();
+      const sameEvent = list.filter(e => String(e.id) === String(event_id));
+      // tier= picks which tracked ticket type's curve to return; without it,
+      // the first tracked tier (or the bare event if nothing's tracked).
+      const wantTier = (params.tier || '').trim() || null;
+      const entry = (params.tier != null ? sameEvent.find(e => (e.tier || null) === wantTier) : sameEvent[0]) || null;
+      const tier = entry ? entry.tier || null : wantTier;
+      const readings = await t.getHistory(event_id, tier);
       return respond(200, {
         readings,
         tracked: Boolean(entry),
-        tier: entry ? entry.tier || null : null,
+        tier,
+        // Every ticket type tracked for this event, for the tier switcher.
+        tiers: sameEvent.map(e => ({ tier: e.tier || null, last_p: e.last_p ?? null, last_at: e.last_at || null, priority: Boolean(e.priority) })),
         group: entry ? entry.group || null : null,
         label: entry ? entry.label || null : null,
         matchup: entry ? entry.matchup || null : null,
@@ -883,7 +912,7 @@ Keep it concise and conversational. Bold the key insights.`;
       const due = upcoming
         .filter(e => !params.group || e.group === params.group)
         .filter(isDue)
-        .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)))
+        .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)) || String(a.id).localeCompare(String(b.id)))
         .slice(0, limit);
 
       if (due.length === 0) {
@@ -894,7 +923,7 @@ Keep it concise and conversational. Bold the key insights.`;
       // 3) Price the due events in batched Claude web-search calls (run in
       // parallel — the Lambda has 90s). Deep-watch events additionally get a
       // per-marketplace breakdown ("sites").
-      const tierRuleText = ' When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club; "Promenade" means Arthur Ashe Stadium upper Promenade seats, never Loge or Courtside; "Loge" means the middle Loge level only.';
+      const tierRuleText = ' Ids shaped "<number>#<ticket type>" are ticket types of one event: they share the event page, so price them together. When an event names a ticket type, every number for that id ("p", "avg", "chg", "sites") must be for that ticket type only — e.g. "Grounds pass" means general-admission grounds tickets, never hospitality, suites, chalets, club, or VIP packages; "Upper level" means upper-deck seats, never lower bowl or club; "Promenade" means Arthur Ashe Stadium upper Promenade seats, never Loge or Courtside; "Loge" means the middle Loge level only.';
       const deepRuleText = ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for that event and ticket type, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.';
       // Tournament sessions: two sessions a day are different tickets, and
       // who is playing moves the price more than anything — capture it when
@@ -934,7 +963,7 @@ Keep it concise and conversational. Bold the key insights.`;
           const hhmm = e.datetime_local && /T\d{2}:\d{2}/.test(e.datetime_local) ? ` at ${e.datetime_local.slice(11, 16)} local time` : '';
           const label = e.label ? ` (${e.label})` : '';
           const known = e.matchup ? ` — last known matchup: ${e.matchup}` : '';
-          return `- id ${e.id}: ${e.title}${label}${where ? ` at ${where}` : ''} on ${when}${hhmm} (this specific date and session only)${tier}${known}${tag}`;
+          return `- id ${t.readingKey(e.id, e.tier)}: ${e.title}${label}${where ? ` at ${where}` : ''} on ${when}${hhmm} (this specific date and session only)${tier}${known}${tag}`;
         }).join('\n');
         const rules = [
           batch.some(e => e.tier) ? tierRuleText : '',
@@ -997,7 +1026,9 @@ Keep it concise and conversational. Bold the key insights.`;
       // 4) One timestamped reading per due event that got a price.
       let written = 0, noprice = 0;
       for (const e of due) {
-        const g = priced[String(e.id)];
+        // Claude may answer with the composite id or, for a lone tier, the bare one.
+        const g = priced[t.readingKey(e.id, e.tier)]
+          || (due.filter(o => String(o.id) === String(e.id)).length === 1 ? priced[String(e.id)] : null);
         if (!g) { noprice++; continue; }
         // Per-marketplace quotes (deep watch only). Cheapest confirmed site
         // price wins over the headline "p" if it's lower.
@@ -1008,7 +1039,7 @@ Keep it concise and conversational. Bold the key insights.`;
         const siteMin = sites.length ? Math.min(...sites.map(s => s.p)) : null;
         const p = g.p != null ? Math.round(Number(g.p)) : siteMin;
         if (p == null || !Number.isFinite(p)) { noprice++; continue; }
-        const item = { event_id: String(e.id), date: nowISO, p: siteMin != null && siteMin < p ? siteMin : p, title: e.title };
+        const item = { event_id: t.readingKey(e.id, e.tier), date: nowISO, p: siteMin != null && siteMin < p ? siteMin : p, title: e.title, sg_id: String(e.id) };
         if (g.avg != null) item.avg = g.avg;
         if (g.chg != null) item.chg = g.chg;
         if (sites.length) item.sites = sites;

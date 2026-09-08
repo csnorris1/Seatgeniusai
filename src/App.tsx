@@ -350,6 +350,15 @@ function useIsDesktop() {
 
 const sameId = (a: string | number | null | undefined, b: string | number | null | undefined) =>
   a != null && b != null && String(a) === String(b);
+// A tracked entry is one (event, ticket type); this is its unique key.
+const tkey = (t: { id: string | number; tier?: string | null }) => `${t.id}#${t.tier || ""}`;
+const sameEntry = (
+  a: { id: string | number; tier?: string | null } | null | undefined,
+  b: { id: string | number | null; tier?: string | null } | null | undefined,
+) => a != null && b != null && b.id != null && String(a.id) === String(b.id) && (a.tier || "") === (b.tier || "");
+
+/** One tracked ticket type of the selected event, for the tier switcher. */
+type TrackedTier = { tier: string | null; last_p?: number | null; last_at?: string | null; priority?: boolean };
 
 const trackedToEvent = (t: TrackedEvent): Event => ({
   id: t.id,
@@ -461,6 +470,8 @@ const localToEvent = (e: LocalEvent): Event => ({
 // the detail block to render under the open card on small screens.
 type ListProps = {
   selectedId: string | number | null;
+  /** Ticket type of the open event ("" when none). */
+  selectedTier: string;
   onSelect: (e: Event) => void;
   inlineDetail: ReactNode;
 };
@@ -499,6 +510,8 @@ export default function SeatGenius() {
   const [tier, setTier] = useState("");
   // Round / matchup for a tournament session, from the tracker.
   const [sessionMeta, setSessionMeta] = useState<SessionContext | null>(null);
+  // Every ticket type tracked for the selected event (tier switcher).
+  const [trackedTiers, setTrackedTiers] = useState<TrackedTier[]>([]);
   const [trackBusy, setTrackBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -592,15 +605,18 @@ export default function SeatGenius() {
     setBestPlatform(null);
     setReadings([]);
     setIsTracked(false);
-    setTier("");
+    setTier(event.tier || "");
     setSessionMeta(null);
+    setTrackedTiers([]);
     setDetailError(null);
     setLoadingListings(true);
     try {
+      const hq = new URLSearchParams({ action: "history", event_id: String(event.id) });
+      if (event.tier) hq.set("tier", event.tier);
       const [listingsRes, compareRes, historyRes] = await Promise.all([
         fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`),
         fetch(`${AWS_URL}/search?action=compare&event_id=${event.id}`),
-        fetch(`${AWS_URL}/search?action=history&event_id=${event.id}`),
+        fetch(`${AWS_URL}/search?${hq.toString()}`),
       ]);
       const listingsData = await listingsRes.json();
       setListings(listingsData.listings || []);
@@ -612,7 +628,8 @@ export default function SeatGenius() {
       const historyData = await historyRes.json();
       setReadings(historyData.readings || []);
       setIsTracked(Boolean(historyData.tracked));
-      setTier(historyData.tier || "");
+      setTier(historyData.tier || event.tier || "");
+      setTrackedTiers(Array.isArray(historyData.tiers) ? historyData.tiers : []);
       if (event.group || historyData.group) {
         setSessionMeta({
           label: historyData.label || event.label || null,
@@ -645,10 +662,10 @@ export default function SeatGenius() {
     setTrackBusy(true);
     try {
       if (isTracked) {
-        await fetch(
-          `${AWS_URL}/search?action=untrack&event_id=${selectedEvent.id}`,
-        );
+        const uq = new URLSearchParams({ action: "untrack", event_id: String(selectedEvent.id), tier });
+        await fetch(`${AWS_URL}/search?${uq.toString()}`);
         setIsTracked(false);
+        setTrackedTiers((ts) => ts.filter((x) => (x.tier || "") !== tier));
       } else {
         const qs = new URLSearchParams({
           action: "track",
@@ -666,13 +683,54 @@ export default function SeatGenius() {
         if (selectedEvent.group) qs.set("group", selectedEvent.group);
         const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
         const data = await res.json();
-        if (res.ok && data.ok) setIsTracked(true);
-        else
+        if (res.ok && data.ok) {
+          setIsTracked(true);
+          setTrackedTiers((ts) => ts.some((x) => (x.tier || "") === tier) ? ts : [...ts, { tier: tier || null }]);
+          setSelectedEvent({ ...selectedEvent, tier: tier || undefined, group: data.group || selectedEvent.group, label: data.label || selectedEvent.label });
+        } else
           setDetailError(
             data.error || "Couldn't track this event. Try again.",
           );
       }
       setTrackedLoaded(false); // refresh the watchlist next time it's opened
+    } catch {
+      setDetailError("Couldn't update tracking. Try again.");
+    } finally {
+      setTrackBusy(false);
+    }
+  };
+
+  // Tier switcher: look at another tracked ticket type of the same event.
+  const switchTier = (t: string) => {
+    if (!selectedEvent || (selectedEvent.tier || "") === t) return;
+    selectEvent({ ...selectedEvent, tier: t || undefined });
+  };
+  // Start tracking one more ticket type of the open event; it inherits the
+  // event's group and label on the backend.
+  const trackTier = async (t: string) => {
+    if (!selectedEvent || trackBusy) return;
+    setTrackBusy(true);
+    try {
+      const qs = new URLSearchParams({
+        action: "track",
+        event_id: String(selectedEvent.id),
+        title: selectedEvent.short_title || selectedEvent.title || "",
+        date: selectedEvent.datetime_local || "",
+        venue: selectedEvent.venue || "",
+        city: selectedEvent.city || "",
+        category: selectedEvent.category || "",
+        url: selectedEvent.url || "",
+        tier: t,
+      });
+      if (selectedEvent.popularity != null) qs.set("popularity", String(selectedEvent.popularity));
+      const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
+      const data = await res.json();
+      if (!(res.ok && data.ok)) {
+        setDetailError(data.error || "Couldn't track that ticket type. Try again.");
+        return;
+      }
+      setTrackedLoaded(false);
+      selectEvent({ ...selectedEvent, tier: t });
     } catch {
       setDetailError("Couldn't update tracking. Try again.");
     } finally {
@@ -705,7 +763,7 @@ export default function SeatGenius() {
         const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
         if (res.status === 409) { full = true; break; }
       }
-      if (full) setError("The watchlist filled up before every session was added (25 max). Untrack something and try again.");
+      if (full) setError("The watchlist filled up before every session was added (40 max). Untrack something and try again.");
       setTrackedLoaded(false);
       loadTracked();
       setView("watch");
@@ -777,6 +835,7 @@ export default function SeatGenius() {
             : "",
         listingText,
         altSitesText,
+        tier,
       });
       const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
       const data = await res.json();
@@ -839,7 +898,7 @@ export default function SeatGenius() {
   const siblings = useMemo(() => {
     if (!selectedEvent?.group) return [];
     return tracked
-      .filter((t) => t.group === selectedEvent.group)
+      .filter((t) => t.group === selectedEvent.group && (t.tier || "") === (selectedEvent.tier || ""))
       .sort((a, b) => ((a.datetime_local || "") < (b.datetime_local || "") ? -1 : 1));
   }, [tracked, selectedEvent]);
 
@@ -855,6 +914,9 @@ export default function SeatGenius() {
         tier={tier}
         tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title, selectedEvent.venue)}
         onTierChange={setTier}
+        trackedTiers={trackedTiers}
+        onSwitchTier={switchTier}
+        onTrackTier={trackTier}
         siblings={siblings}
         session={selectedEvent.group ? sessionMeta || { label: selectedEvent.label } : null}
         onSelectSibling={(t) => selectEvent(trackedToEvent(t))}
@@ -890,7 +952,7 @@ export default function SeatGenius() {
       </div>
     ) : null;
 
-  const listProps: ListProps = { selectedId, onSelect: handleSelect, inlineDetail };
+  const listProps: ListProps = { selectedId, selectedTier: selectedEvent?.tier || "", onSelect: handleSelect, inlineDetail };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900 font-sans">
@@ -1052,25 +1114,24 @@ function EmptyPanel() {
 
 // Day-by-day strip for a multi-day event: each day's latest tracked price,
 // the open day highlighted. Click a day to swap the detail to that day.
-function DayStrip({
-  days,
-  selectedId,
-  onSelect,
-}: {
+type PickerProps = {
   days: TrackedEvent[];
   selectedId: string | number | null;
+  selectedTier: string;
   onSelect: (t: TrackedEvent) => void;
-}) {
+};
+
+function DayStrip({ days, selectedId, selectedTier, onSelect }: PickerProps) {
   const priced = days.filter((d) => d.last_p != null);
   const cheapest = priced.length ? Math.min(...priced.map((d) => d.last_p as number)) : null;
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
       {days.map((d) => {
-        const open = sameId(d.id, selectedId);
+        const open = sameEntry(d, { id: selectedId, tier: selectedTier });
         const isCheapest = d.last_p != null && d.last_p === cheapest && priced.length > 1;
         return (
           <button
-            key={d.id}
+            key={tkey(d)}
             type="button"
             onClick={() => onSelect(d)}
             aria-pressed={open}
@@ -1104,15 +1165,7 @@ function DayStrip({
 // session and a night session are different tickets). Rows are calendar
 // days, columns are Day / Night, each cell is one session with its round
 // label and latest tracked price. Cheapest session in green, open one in blue.
-function SessionGrid({
-  days,
-  selectedId,
-  onSelect,
-}: {
-  days: TrackedEvent[];
-  selectedId: string | number | null;
-  onSelect: (t: TrackedEvent) => void;
-}) {
+function SessionGrid({ days, selectedId, selectedTier, onSelect }: PickerProps) {
   const priced = days.filter((d) => d.last_p != null);
   const cheapest = priced.length ? Math.min(...priced.map((d) => d.last_p as number)) : null;
   const rows = new Map<string, TrackedEvent[]>();
@@ -1122,11 +1175,11 @@ function SessionGrid({
   }
   const cell = (d: TrackedEvent | undefined, part: "Day" | "Night") => {
     if (!d) return <span key={part} className="rounded-lg border border-dashed border-slate-200" />;
-    const open = sameId(d.id, selectedId);
+    const open = sameEntry(d, { id: selectedId, tier: selectedTier });
     const isCheapest = d.last_p != null && d.last_p === cheapest && priced.length > 1;
     return (
       <button
-        key={d.id}
+        key={tkey(d)}
         type="button"
         onClick={() => onSelect(d)}
         aria-pressed={open}
@@ -1175,11 +1228,7 @@ function SessionGrid({
 
 // One-session-a-day groups (a golf week) keep the compact strip; anything
 // with two sessions on one date gets the day/night grid.
-function SessionPicker(props: {
-  days: TrackedEvent[];
-  selectedId: string | number | null;
-  onSelect: (t: TrackedEvent) => void;
-}) {
+function SessionPicker(props: PickerProps) {
   const counts = new Map<string, number>();
   for (const d of props.days) counts.set(dateKey(d.datetime_local), (counts.get(dateKey(d.datetime_local)) || 0) + 1);
   const twoADay = [...counts.values()].some((n) => n > 1);
@@ -1188,14 +1237,26 @@ function SessionPicker(props: {
 
 // One card for all the days of a multi-day event on the Price Watch tab.
 function GroupCard({
-  days,
+  days: allDays,
   selectedId,
+  selectedTier,
   onSelect,
   inlineDetail,
 }: ListProps & { days: TrackedEvent[] }) {
-  const first = days[0];
-  const open = days.some((d) => sameId(d.id, selectedId));
-  const tier = days.find((d) => d.tier)?.tier;
+  const first = allDays[0];
+  const open = allDays.some((d) => sameId(d.id, selectedId));
+  // One grid, one ticket type at a time: a toggle picks which tier's prices
+  // the cells show. It follows the open session's tier unless overridden.
+  const tiers = [...new Set(allDays.map((d) => d.tier || ""))];
+  const [pickedTier, setPickedTier] = useState<string | null>(null);
+  const activeTier =
+    pickedTier != null && tiers.includes(pickedTier)
+      ? pickedTier
+      : open && tiers.includes(selectedTier)
+        ? selectedTier
+        : tiers[0];
+  const days = allDays.filter((d) => (d.tier || "") === activeTier);
+  const tier = tiers.length === 1 ? days.find((d) => d.tier)?.tier : undefined;
   const priced = days.filter((d) => d.last_p != null);
   const cheapest = priced.length
     ? priced.reduce((a, b) => ((a.last_p as number) <= (b.last_p as number) ? a : b))
@@ -1223,7 +1284,8 @@ function GroupCard({
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5" />
-                    {days.length} {days.length === 1 ? "session" : "sessions"}
+                  {days.length} {days.length === 1 ? "session" : "sessions"}
+                  {tiers.length > 1 ? ` · ${tiers.length} ticket types` : ""}
                 </span>
                 {first.venue && (
                   <span className="inline-flex min-w-0 items-center gap-1">
@@ -1242,6 +1304,27 @@ function GroupCard({
               </div>
             </div>
           </div>
+          {tiers.length > 1 && (
+            <div className="mt-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Ticket type">
+              {tiers.map((t) => (
+                <button
+                  key={t || "any"}
+                  type="button"
+                  role="tab"
+                  aria-selected={t === activeTier}
+                  onClick={() => setPickedTier(t)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    t === activeTier
+                      ? "border-blue-300 bg-blue-100 text-blue-800"
+                      : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
+                  )}
+                >
+                  {t || "Cheapest available"}
+                </button>
+              ))}
+            </div>
+          )}
           {cheapest && priced.length > 1 && (
             <p className="mt-2 text-xs text-slate-600">
               Cheapest session:{" "}
@@ -1250,7 +1333,7 @@ function GroupCard({
             </p>
           )}
           <div className="mt-3">
-            <SessionPicker days={days} selectedId={selectedId} onSelect={(d) => onSelect(trackedToEvent(d))} />
+            <SessionPicker days={days} selectedId={selectedId} selectedTier={activeTier} onSelect={(d) => onSelect(trackedToEvent(d))} />
           </div>
         </CardContent>
       </Card>
@@ -1333,7 +1416,7 @@ function DiscoverView({
               key={sr.key}
               series={sr}
               busy={seriesBusy === sr.key}
-              slotsLeft={Math.max(0, 25 - trackedCount)}
+              slotsLeft={Math.max(0, 40 - trackedCount)}
               onTrack={(t) => onTrackSeries(sr, t)}
             />
           ))}
@@ -1450,7 +1533,7 @@ function WatchView({
       days.sort((a, b) => byDate(a.datetime_local, b.datetime_local));
       out.push({ key: `g:${key}`, date: days[0].datetime_local || "", days });
     }
-    for (const s of singles) out.push({ key: String(s.id), date: s.datetime_local || "", single: s });
+    for (const s of singles) out.push({ key: tkey(s), date: s.datetime_local || "", single: s });
     return out.sort((a, b) => byDate(a.date, b.date));
   }, [tracked]);
   return (
@@ -1493,10 +1576,10 @@ function WatchView({
               <Fragment key={row.key}>
                 <EventCard
                   event={trackedToEvent(row.single)}
-                  selected={sameId(row.single.id, list.selectedId)}
+                  selected={sameEntry(row.single, { id: list.selectedId, tier: list.selectedTier })}
                   onSelect={list.onSelect}
                 />
-                {sameId(row.single.id, list.selectedId) && list.inlineDetail}
+                {sameEntry(row.single, { id: list.selectedId, tier: list.selectedTier }) && list.inlineDetail}
               </Fragment>
             ) : null,
           )}
@@ -1801,6 +1884,9 @@ function BuyTimingCard({
   tier,
   tierOptions,
   onTierChange,
+  trackedTiers,
+  onSwitchTier,
+  onTrackTier,
 }: {
   verdict: BuyVerdict;
   isTracked: boolean;
@@ -1809,8 +1895,13 @@ function BuyTimingCard({
   tier: string;
   tierOptions: string[];
   onTierChange: (t: string) => void;
+  trackedTiers: TrackedTier[];
+  onSwitchTier: (t: string) => void;
+  onTrackTier: (t: string) => void;
 }) {
   const s = verdictStyles[verdict.action];
+  const trackedNames = trackedTiers.map((x) => x.tier || "");
+  const untracked = ["", ...tierOptions].filter((o) => !trackedNames.includes(o));
   return (
     <Card className={cn("backdrop-blur-sm", s.border, s.bg)}>
       <CardContent className="p-6">
@@ -1848,8 +1939,48 @@ function BuyTimingCard({
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-2">
-            {/* Ticket type: pick before tracking; read-only once tracking, since
-                changing it would start a new curve (untrack to switch). */}
+            {/* Ticket types already tracked for this event: switch between
+                their curves, or add another one. */}
+            {trackedTiers.length > 0 && (
+              <div className="flex max-w-[16rem] flex-wrap justify-end gap-1.5">
+                {trackedTiers.map((x) => {
+                  const name = x.tier || "";
+                  const active = name === tier && isTracked;
+                  return (
+                    <button
+                      key={name || "any"}
+                      type="button"
+                      onClick={() => onSwitchTier(name)}
+                      aria-pressed={active}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                        active
+                          ? "border-blue-300 bg-blue-100 text-blue-800"
+                          : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
+                      )}
+                    >
+                      {name || "Cheapest available"}
+                      {x.last_p != null && <span className="ml-1 tabular-nums text-slate-500">${x.last_p}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {isTracked && untracked.length > 0 && (
+              <select
+                value=""
+                disabled={trackBusy}
+                onChange={(e) => { if (e.target.value !== "") onTrackTier(e.target.value); }}
+                aria-label="Track another ticket type"
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">+ Track another ticket type…</option>
+                {untracked.filter((o) => o !== "").map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            )}
+            {/* Ticket type: pick before tracking. */}
             {tierOptions.length > 0 && !isTracked && (
               <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 Ticket type
@@ -1858,8 +1989,8 @@ function BuyTimingCard({
                   onChange={(e) => onTierChange(e.target.value)}
                   className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-normal normal-case tracking-normal text-slate-900 focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">Cheapest available</option>
-                  {tierOptions.map((o) => (
+                  {untracked.includes("") && <option value="">Cheapest available</option>}
+                  {tierOptions.filter((o) => untracked.includes(o)).map((o) => (
                     <option key={o} value={o}>{o}</option>
                   ))}
                 </select>
@@ -1886,7 +2017,7 @@ function BuyTimingCard({
               ) : (
                 <BellPlus className="h-4 w-4" />
               )}
-              {isTracked ? "Tracking prices" : "Track price"}
+              {isTracked ? (tier ? `Stop tracking ${tier}` : "Stop tracking") : "Track price"}
             </Button>
           </div>
         </div>
@@ -1948,6 +2079,9 @@ function EventDetail({
   tier,
   tierOptions,
   onTierChange,
+  trackedTiers,
+  onSwitchTier,
+  onTrackTier,
   siblings,
   session,
   onSelectSibling,
@@ -1961,6 +2095,9 @@ function EventDetail({
   tier: string;
   tierOptions: string[];
   onTierChange: (t: string) => void;
+  trackedTiers: TrackedTier[];
+  onSwitchTier: (t: string) => void;
+  onTrackTier: (t: string) => void;
   siblings: TrackedEvent[];
   session: SessionContext | null;
   onSelectSibling: (t: TrackedEvent) => void;
@@ -2062,7 +2199,7 @@ function EventDetail({
                 </p>
               </CardHeader>
               <CardContent>
-                <SessionPicker days={siblings} selectedId={event.id} onSelect={onSelectSibling} />
+                <SessionPicker days={siblings} selectedId={event.id} selectedTier={event.tier || ""} onSelect={onSelectSibling} />
               </CardContent>
             </Card>
           )}
@@ -2080,6 +2217,9 @@ function EventDetail({
             tier={tier}
             tierOptions={tierOptions}
             onTierChange={onTierChange}
+            trackedTiers={trackedTiers}
+            onSwitchTier={onSwitchTier}
+            onTrackTier={onTrackTier}
           />
           <PriceHistoryCard readings={readings} isTracked={isTracked} />
           <MarketplaceCard readings={readings} />
