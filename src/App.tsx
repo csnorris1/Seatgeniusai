@@ -42,6 +42,11 @@ import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@
 import { guideFor } from "@/lib/venueNotes";
 import { BallparkMap } from "@/components/VenueMap";
 import { ArenaMap } from "@/components/ArenaMap";
+import { StadiumMap } from "@/components/StadiumMap";
+import { AmphitheaterMap } from "@/components/AmphitheaterMap";
+import { TheaterMap } from "@/components/TheaterMap";
+import type { VenueGuide } from "@/lib/venueNotes";
+import type { MapZone } from "@/components/VenueMap";
 
 const AWS_URL = "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com";
 
@@ -2387,6 +2392,33 @@ function EventDetail({
   );
 }
 
+// Pick the schematic a venue guide asks for. `stage` draws the end-stage
+// variant of the stadium map (concerts on a football field).
+function GuideMap({
+  map,
+  stage,
+  ...rest
+}: {
+  map: NonNullable<VenueGuide["map"]>;
+  stage: boolean;
+  zones: MapZone[];
+  activeTier: string;
+  onPick: (tier: string) => void;
+}) {
+  switch (map) {
+    case "arena":
+      return <ArenaMap className="mx-auto max-w-sm" {...rest} />;
+    case "stadium":
+      return <StadiumMap className="mx-auto max-w-sm" stage={stage} {...rest} />;
+    case "amphitheater":
+      return <AmphitheaterMap className="mx-auto max-w-md" {...rest} />;
+    case "theater":
+      return <TheaterMap className="mx-auto max-w-md" {...rest} />;
+    default:
+      return <BallparkMap className="mx-auto max-w-md" {...rest} />;
+  }
+}
+
 // What a first-time buyer needs to know about this venue or sport: what the
 // ticket types cover (the one being tracked is highlighted) and the traps
 // that move prices. Content lives in src/lib/venueNotes.ts.
@@ -2423,31 +2455,18 @@ function VenueGuideCard({
       <CardContent className="space-y-3">
         {guide.map ? (
           <>
-            {guide.map === "arena" ? (
-              <ArenaMap
-                className="mx-auto max-w-sm"
-                activeTier={tier}
-                onPick={onPick}
-                zones={guide.seating.map((s) => ({
-                  tier: s.tier,
-                  where: s.where,
-                  price: priceOf(s.tier),
-                  tracked: isTracked(s.tier),
-                }))}
-              />
-            ) : (
-              <BallparkMap
-                className="mx-auto max-w-md"
-                activeTier={tier}
-                onPick={onPick}
-                zones={guide.seating.map((s) => ({
-                  tier: s.tier,
-                  where: s.where,
-                  price: priceOf(s.tier),
-                  tracked: isTracked(s.tier),
-                }))}
-              />
-            )}
+            <GuideMap
+              map={guide.map}
+              stage={event.category === "Concerts"}
+              activeTier={tier}
+              onPick={onPick}
+              zones={guide.seating.map((s) => ({
+                tier: s.tier,
+                where: s.where,
+                price: priceOf(s.tier),
+                tracked: isTracked(s.tier),
+              }))}
+            />
             {tier && activeWhere && (
               <p className="text-center text-xs text-slate-600">
                 <span className="font-medium text-slate-900">{tier}:</span> {activeWhere}

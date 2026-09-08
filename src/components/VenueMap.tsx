@@ -22,7 +22,7 @@ type ZoneKey = "upper" | "club" | "infield" | "outfield";
 // Match a ticket-type name to a zone; fall back to cheapest-first order.
 function zoneFor(tier: string, index: number): ZoneKey {
   const t = tier.toLowerCase();
-  if (/upper|500|400|nosebleed|terrace|view/.test(t)) return "upper";
+  if (/upper|500|400|nosebleed|terrace|view|grandstand/.test(t)) return "upper";
   if (/club|suite|premium|loge|mezz/.test(t)) return "club";
   if (/outfield|bleacher|pavilion/.test(t)) return "outfield";
   if (/infield|box|field level|dugout|lower/.test(t)) return "infield";

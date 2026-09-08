@@ -12,6 +12,10 @@ It picks up where the 2026-09-08 session left off.
 - `guideFor({ venue, title, category })` in venueNotes.ts resolves venue first, then category.
 - Two agents per venue produced the existing entries: one on seating layout, one on that sport's resale price behavior. Each answered in under 450 words with a URL per claim.
 
+## Status (2026-09-08)
+
+Batch 1 below is **done**: all 16 venues are in `VENUE_GUIDES` (one Opus researcher + one Opus verifier per venue; refuted section ranges were corrected from the verifier's official-chart check, refuted notes dropped). The `stadium`, `amphitheater` and `theater` maps exist and are wired through `GuideMap` in `App.tsx`. Nothing uses the `theater` map yet — the next batch should add theater venues (Chicago Theatre, Auditorium Theatre, Broadway houses) and a Theater category fallback in `SPORT_GUIDES`. The golf `grounds` map is still undrawn.
+
 ## The job
 
 Run a workflow (`/swarm` or "use a workflow") that produces venue guides in the exact `VenueGuide` shape, then append them to `VENUE_GUIDES`.
