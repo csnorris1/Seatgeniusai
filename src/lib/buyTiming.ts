@@ -1,4 +1,13 @@
-export type Reading = { t: string; p: number; avg?: number | null };
+/** One marketplace's cheapest listing at the time of a reading. */
+export type SiteQuote = { site: string; p: number; url?: string };
+
+export type Reading = {
+  t: string;
+  p: number;
+  avg?: number | null;
+  /** Per-marketplace quotes; only present for events on deep (hourly) watch. */
+  sites?: SiteQuote[];
+};
 
 export type FactorTone = "good" | "neutral" | "bad";
 

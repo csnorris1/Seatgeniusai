@@ -202,6 +202,7 @@ exports.handler = async (event) => {
           t: r.date,
           p: r.p ?? r.lowest_price,
           avg: r.avg ?? r.average_price ?? null,
+          ...(Array.isArray(r.sites) && r.sites.length ? { sites: r.sites } : {}),
         }))
         .sort((a, b) => (a.t < b.t ? -1 : 1))
         .slice(-120);
@@ -562,8 +563,15 @@ Keep it concise and conversational. Bold the key insights.`;
       if (!event_id || !params.title) return respond(400, { error: 'event_id and title are required' });
       const t = priceHistoryTools();
       const list = await t.getTracked();
-      if (list.some(e => String(e.id) === String(event_id))) {
-        return respond(200, { ok: true, already: true, count: list.length });
+      // priority=1 puts the event in "deep watch": priced every hour with a
+      // per-marketplace breakdown (see the sweep). Costs ~$3/day per event, so
+      // it's opt-in and meant for one or two events at a time.
+      const wantPriority = params.priority === '1';
+      const existing = list.find(e => String(e.id) === String(event_id));
+      if (existing) {
+        if (wantPriority && !existing.priority) { existing.priority = true; await t.putTracked(list); }
+        else if (params.priority === '0' && existing.priority) { delete existing.priority; await t.putTracked(list); }
+        return respond(200, { ok: true, already: true, count: list.length, priority: Boolean(existing.priority) });
       }
       if (list.length >= 25) {
         return respond(409, { error: 'Watchlist is full (25 events). Untrack something first.' });
@@ -578,9 +586,10 @@ Keep it concise and conversational. Bold the key insights.`;
         popularity: params.popularity ? Number(params.popularity) : null,
         url: params.url || null,
         tracked_at: new Date().toISOString(),
+        ...(wantPriority ? { priority: true } : {}),
       });
       await t.putTracked(list);
-      return respond(200, { ok: true, count: list.length });
+      return respond(200, { ok: true, count: list.length, priority: wantPriority });
     }
 
     if (action === 'untrack') {
@@ -791,6 +800,7 @@ Keep it concise and conversational. Bold the key insights.`;
       const h = now.getUTCHours();
       const isDue = (e) => {
         if (params.force === '1') return true;
+        if (e.priority) return true; // deep watch: every hour, regardless of days out
         if (!e.datetime_local) return h === 12;
         const dt = new Date(e.datetime_local);
         if (isNaN(dt.getTime())) return h === 12;
@@ -806,13 +816,19 @@ Keep it concise and conversational. Bold the key insights.`;
         return respond(200, { logged: 0, tracked: upcoming.length, note: 'No tracked events due this hour.' });
       }
 
-      // 3) Price all due events in ONE Claude web-search call.
+      // 3) Price all due events in ONE Claude web-search call. Deep-watch
+      // events additionally get a per-marketplace breakdown ("sites").
+      const deep = due.some(e => e.priority);
       const lines = due.map(e => {
         const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
         const where = [e.venue, e.city].filter(Boolean).join(', ');
-        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when}`;
+        const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
+        return `- id ${e.id}: ${e.title}${where ? ` at ${where}` : ''} on ${when}${tag}`;
       }).join('\n');
-      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping). Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+      const deepRule = deep
+        ? ' For events marked [DEEP], also fill "sites": one entry per marketplace you can actually confirm a price on — StubHub, SeatGeek, Vivid Seats, TickPick, Gametime, and the primary seller (Ticketmaster or the official box office) — each with "site" (name), "p" (that site\'s cheapest listed price for the event, whole dollars, all-in if shown) and "url" (the event page on that site). Check each marketplace directly rather than relying on one aggregator.'
+        : '';
+      const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "sites" only for events marked [DEEP], otherwise omit it.${deepRule} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
 
       const priced = {};
       try {
@@ -821,8 +837,8 @@ Keep it concise and conversational. Bold the key insights.`;
           headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 2000,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+            max_tokens: deep ? 3000 : 2000,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: deep ? 12 : 8 }],
             messages: [{ role: 'user', content: prompt }],
           }),
         });
@@ -846,10 +862,20 @@ Keep it concise and conversational. Bold the key insights.`;
       let written = 0, noprice = 0;
       for (const e of due) {
         const g = priced[String(e.id)];
-        if (!g || g.p == null) { noprice++; continue; }
-        const item = { event_id: String(e.id), date: nowISO, p: g.p, title: e.title };
+        if (!g) { noprice++; continue; }
+        // Per-marketplace quotes (deep watch only). Cheapest confirmed site
+        // price wins over the headline "p" if it's lower.
+        const sites = (Array.isArray(g.sites) ? g.sites : [])
+          .filter(s => s && s.site && s.p != null)
+          .map(s => ({ site: String(s.site), p: Math.round(Number(s.p)), ...(s.url ? { url: String(s.url) } : {}) }))
+          .filter(s => Number.isFinite(s.p) && s.p > 0);
+        const siteMin = sites.length ? Math.min(...sites.map(s => s.p)) : null;
+        const p = g.p != null ? Math.round(Number(g.p)) : siteMin;
+        if (p == null || !Number.isFinite(p)) { noprice++; continue; }
+        const item = { event_id: String(e.id), date: nowISO, p: siteMin != null && siteMin < p ? siteMin : p, title: e.title };
         if (g.avg != null) item.avg = g.avg;
         if (g.chg != null) item.chg = g.chg;
+        if (sites.length) item.sites = sites;
         if (e.datetime_local) item.event_date = e.datetime_local;
         try {
           await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item, { removeUndefinedValues: true }) }));

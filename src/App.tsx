@@ -1493,6 +1493,7 @@ function EventDetail({
             onToggleTrack={onToggleTrack}
           />
           <PriceHistoryCard readings={readings} isTracked={isTracked} />
+          <MarketplaceCard readings={readings} />
           <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
           {platforms.length > 0 && (
             <PriceComparisonCard platforms={platforms} bestPlatform={bestPlatform} />
@@ -1536,6 +1537,71 @@ function EventDetail({
         />
       )}
     </div>
+  );
+}
+
+// Per-marketplace quotes from the most recent deep-watch reading: which site
+// had the cheapest seat at the last check, with a link to each.
+function MarketplaceCard({ readings }: { readings: Reading[] }) {
+  const latest = [...readings].reverse().find((r) => r.sites && r.sites.length > 0);
+  if (!latest?.sites) return null;
+  const sites = [...latest.sites].sort((a, b) => a.p - b.p);
+  const best = sites[0];
+  const time = formatTime(latest.t);
+
+  return (
+    <Card className="border-slate-200 bg-white backdrop-blur-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-slate-900">
+          <Ticket className="h-5 w-5 text-blue-600" />
+          Cheapest by marketplace
+        </CardTitle>
+        <p className="text-xs text-slate-500">
+          Checked {formatDate(latest.t)}
+          {time && ` at ${time}`} · updates every hour
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="divide-y divide-slate-200">
+          {sites.map((s) => (
+            <div
+              key={s.site}
+              className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm text-slate-800">{s.site}</span>
+                {s === best && (
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
+                  >
+                    Cheapest
+                  </Badge>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className={cn("text-sm font-semibold tabular-nums", s === best ? "text-emerald-700" : "text-slate-900")}>
+                  ${s.p}
+                </span>
+                {s.url ? (
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  >
+                    View
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : (
+                  <span className="w-10 text-xs text-slate-400" />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
