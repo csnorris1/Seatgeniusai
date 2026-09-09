@@ -42,6 +42,13 @@ import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, trendPct, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 import { guideFor, rangeOf } from "@/lib/venueNotes";
 import { cheapestWindow, formatDay, formatWindow, type PriceWindow } from "@/lib/priceWindow";
+import {
+  checkTargetAlerts,
+  notifyState,
+  requestNotifications,
+  showEnabledNotification,
+  type NotifyState,
+} from "@/lib/targetAlerts";
 import { BallparkMap } from "@/components/VenueMap";
 import { ArenaMap } from "@/components/ArenaMap";
 import { StadiumMap } from "@/components/StadiumMap";
@@ -576,17 +583,62 @@ export default function SeatGenius() {
       .finally(() => setLoadingTrending(false));
   }, []);
 
+  // A target-price notification was clicked: open that ticket type.
+  const selectEventRef = useRef<(event: Event) => Promise<void>>(async () => {});
+  const openFromAlert = useCallback((entry: TrackedEvent) => {
+    setView("watch");
+    void selectEventRef.current(trackedToEvent(entry));
+  }, []);
+
   const loadTracked = useCallback(() => {
     setLoadingTracked(true);
     fetch(`${AWS_URL}/search?action=tracked`)
       .then((res) => res.json())
-      .then((data) => setTracked(data.events || []))
+      .then((data) => {
+        const events: TrackedEvent[] = data.events || [];
+        setTracked(events);
+        checkTargetAlerts(events, readTargets(), openFromAlert);
+      })
       .catch(() => setTracked([]))
       .finally(() => {
         setLoadingTracked(false);
         setTrackedLoaded(true);
       });
-  }, []);
+  }, [openFromAlert]);
+
+  // Target-price notifications: while the tab is open (even in the
+  // background) re-read the watchlist every 10 minutes, and again whenever the
+  // tab comes back into view, so a sweep that reaches a target gets a ping.
+  // Nothing is fetched unless notifications are on and a target exists.
+  useEffect(() => {
+    let lastAt = 0;
+    const tick = () => {
+      if (notifyState() !== "granted") return;
+      const targets = readTargets();
+      if (!Object.keys(targets).length) return;
+      if (Date.now() - lastAt < 60_000) return;
+      lastAt = Date.now();
+      fetch(`${AWS_URL}/search?action=tracked`)
+        .then((res) => res.json())
+        .then((data) => {
+          const events: TrackedEvent[] = data.events || [];
+          if (events.length) setTracked(events);
+          checkTargetAlerts(events, readTargets(), openFromAlert);
+        })
+        .catch(() => {
+          /* offline: try again next tick */
+        });
+    };
+    const id = window.setInterval(tick, 10 * 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [openFromAlert]);
 
   useEffect(() => {
     // Load once up front (not just on the Price Watch tab): the detail panel
@@ -688,6 +740,7 @@ export default function SeatGenius() {
       setLoadingListings(false);
     }
   }, []);
+  selectEventRef.current = selectEvent;
 
   const isDesktop = useIsDesktop();
 
@@ -1214,7 +1267,7 @@ const TOUR_STEPS = [
   },
   {
     title: "Then we call it: buy or wait",
-    body: "Demand, days out and the trend become one verdict, with an estimated cheapest window and a buy-by date. Set a target price and Price Watch flags it when it hits.",
+    body: "Demand, days out and the trend become one verdict, with an estimated cheapest window and a buy-by date. Set a target price and, with notifications on, we ping you the moment it hits.",
   },
 ];
 
@@ -2388,6 +2441,42 @@ const factorToneClass: Record<string, string> = {
   bad: "border-orange-200 bg-orange-50 text-orange-700",
 };
 
+// Under the target chip: whether the browser will actually ping.
+function TargetNotifyRow({ state, onEnable }: { state: NotifyState; onEnable: () => void }) {
+  if (state === "granted") {
+    return (
+      <p className="flex items-center gap-1.5 text-[11px] text-slate-600">
+        <BellRing className="h-3.5 w-3.5 text-emerald-600" />
+        Notifications on · we ping this device while SeatGenius is open in a tab
+      </p>
+    );
+  }
+  if (state === "default") {
+    return (
+      <button
+        type="button"
+        onClick={onEnable}
+        className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 hover:underline"
+      >
+        <BellPlus className="h-3.5 w-3.5" />
+        Notify me when it hits
+      </button>
+    );
+  }
+  if (state === "denied") {
+    return (
+      <p className="text-[11px] text-slate-500">
+        Notifications are blocked for this site in your browser settings. Price Watch still flags it.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] text-slate-500">
+      This browser can't show notifications (on iPhone, add SeatGenius to the Home Screen). Price Watch still flags it.
+    </p>
+  );
+}
+
 function VerdictHero({
   event,
   verdict,
@@ -2454,11 +2543,21 @@ function VerdictHero({
   const setEditing = (v: boolean) => setTp({ ...cur, editing: v });
   const setDraft = (v: string) => setTp({ ...cur, draft: v });
   const suggested = win?.low ? win.low[1] : now != null ? Math.round(now * 0.9) : null;
+  // Browser notifications for the target (see src/lib/targetAlerts.ts).
+  const [notify, setNotify] = useState<NotifyState>(notifyState);
+  const enableNotify = async (forTarget: number) => {
+    const state = await requestNotifications();
+    setNotify(state);
+    if (state === "granted") showEnabledNotification({ id: event.id, tier, title }, forTarget);
+  };
   const saveTarget = () => {
     const v = Math.round(Number(draft));
     if (!Number.isFinite(v) || v <= 0) return;
     writeTarget(key, v);
     setTp({ ...cur, target: v, editing: false });
+    // First target on this device: ask for notifications right away while
+    // we still have the click (browsers ignore prompts that aren't from one).
+    if (notify === "default") void enableNotify(v);
   };
   const clearTarget = () => {
     writeTarget(key, null);
@@ -2607,7 +2706,11 @@ function VerdictHero({
                 <span>
                   {hit ? "Target hit" : "Target"} <span className="font-semibold">${target}</span>
                   <span className={cn("block text-[11px]", hit ? "text-emerald-700" : "text-blue-700")}>
-                    {hit ? "the price is at or under your target" : "flagged in Price Watch when it hits · this device"}
+                    {hit
+                      ? "the price is at or under your target"
+                      : notify === "granted"
+                        ? "we'll notify you when it hits · this device"
+                        : "flagged in Price Watch when it hits · this device"}
                   </span>
                 </span>
                 <span
@@ -2638,6 +2741,9 @@ function VerdictHero({
                 <Target className="h-4 w-4" />
                 {suggested != null ? `Set a target at $${suggested}` : "Set a target price"}
               </Button>
+            )}
+            {target != null && !editing && (
+              <TargetNotifyRow state={notify} onEnable={() => void enableNotify(target)} />
             )}
 
             {(buyUrl || event.url) && (
