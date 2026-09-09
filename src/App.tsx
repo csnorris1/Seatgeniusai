@@ -22,6 +22,7 @@ import {
   Laugh,
   LineChart,
   Loader2,
+  Mail,
   MapPin,
   MousePointerClick,
   Music,
@@ -44,9 +45,14 @@ import { guideFor, rangeOf } from "@/lib/venueNotes";
 import { cheapestWindow, formatDay, formatWindow, type PriceWindow } from "@/lib/priceWindow";
 import {
   checkTargetAlerts,
+  clearEmailAlert,
   notifyState,
+  readAlertEmail,
+  readEmailAlerts,
   requestNotifications,
+  setEmailAlert,
   showEnabledNotification,
+  syncEmailAlerts,
   type NotifyState,
 } from "@/lib/targetAlerts";
 import { BallparkMap } from "@/components/VenueMap";
@@ -590,6 +596,21 @@ export default function SeatGenius() {
     void selectEventRef.current(trackedToEvent(entry));
   }, []);
 
+  // ?open=<id>&tier=<tier> (the button in a target-hit email), read once.
+  const deepLinkRef = useRef<{ id: string; tier: string | null } | null>(
+    (() => {
+      try {
+        const q = new URLSearchParams(window.location.search);
+        const id = q.get("open");
+        if (!id) return null;
+        window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+        return { id, tier: q.get("tier") || null };
+      } catch {
+        return null;
+      }
+    })(),
+  );
+
   const loadTracked = useCallback(() => {
     setLoadingTracked(true);
     fetch(`${AWS_URL}/search?action=tracked`)
@@ -598,6 +619,13 @@ export default function SeatGenius() {
         const events: TrackedEvent[] = data.events || [];
         setTracked(events);
         checkTargetAlerts(events, readTargets(), openFromAlert);
+        // ?open=<id>&tier=<tier> — the button in a target-hit email.
+        const link = deepLinkRef.current;
+        if (link) {
+          deepLinkRef.current = null;
+          const e = events.find((t) => sameEntry(t, link));
+          if (e) openFromAlert(e);
+        }
       })
       .catch(() => setTracked([]))
       .finally(() => {
@@ -605,6 +633,11 @@ export default function SeatGenius() {
         setTrackedLoaded(true);
       });
   }, [openFromAlert]);
+
+  // Email alerts are server-side; refresh the local mirror once per load.
+  useEffect(() => {
+    void syncEmailAlerts(AWS_URL, readAlertEmail());
+  }, []);
 
   // Target-price notifications: while the tab is open (even in the
   // background) re-read the watchlist every 10 minutes, and again whenever the
@@ -2477,6 +2510,85 @@ function TargetNotifyRow({ state, onEnable }: { state: NotifyState; onEnable: ()
   );
 }
 
+// Email alert controls under the target chip. Works with the tab closed: the
+// hourly sweep on the server sends the mail.
+function TargetEmailRow({
+  state,
+  onEdit,
+  onDraft,
+  onCancel,
+  onSave,
+  onStop,
+}: {
+  state: { on: boolean; editing: boolean; draft: string; busy: boolean; msg: string | null; err: string | null };
+  onEdit: () => void;
+  onDraft: (v: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onStop: () => void;
+}) {
+  if (state.editing) {
+    return (
+      <form
+        className="flex flex-col gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave();
+        }}
+      >
+        <div className="flex gap-1.5">
+          <input
+            autoFocus
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            required
+            value={state.draft}
+            onChange={(e) => onDraft(e.target.value)}
+            placeholder="you@example.com"
+            aria-label="Email address for the alert"
+            className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+          />
+          <Button type="submit" disabled={state.busy} className="bg-blue-600 text-white hover:bg-blue-700">
+            {state.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel} className="border-slate-300 bg-white px-2.5 text-slate-700">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {state.err && <p className="text-[11px] text-red-700">{state.err}</p>}
+        <p className="text-[11px] text-slate-500">One email when this ticket type reaches your target, even with SeatGenius closed. Unsubscribe link in every mail.</p>
+      </form>
+    );
+  }
+  if (state.on) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-600">
+          <Mail className="h-3.5 w-3.5 text-emerald-600" />
+          <span>
+            Email alert on · <span className="font-medium text-slate-800">{state.draft}</span>
+          </span>
+          <button type="button" onClick={onEdit} className="text-blue-700 hover:underline">change</button>
+          <span aria-hidden>·</span>
+          <button type="button" onClick={onStop} className="text-slate-500 hover:underline">stop</button>
+        </p>
+        {state.msg && <p className="text-[11px] text-amber-700">{state.msg}</p>}
+        {state.err && <p className="text-[11px] text-red-700">{state.err}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      <button type="button" onClick={onEdit} className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 hover:underline">
+        <Mail className="h-3.5 w-3.5" />
+        Email me when it hits
+      </button>
+      {state.err && <p className="text-[11px] text-red-700">{state.err}</p>}
+    </div>
+  );
+}
+
 function VerdictHero({
   event,
   verdict,
@@ -2508,7 +2620,7 @@ function VerdictHero({
   matchup?: string | null;
   isTracked: boolean;
   trackBusy: boolean;
-  onToggleTrack: () => void;
+  onToggleTrack: () => void | Promise<void>;
   tier: string;
   tierOptions: string[];
   onTierChange: (t: string) => void;
@@ -2550,6 +2662,45 @@ function VerdictHero({
     setNotify(state);
     if (state === "granted") showEnabledNotification({ id: event.id, tier, title }, forTarget);
   };
+  // Email alert for this (event, tier): saved server-side, mailed by the sweep.
+  const [em, setEm] = useState<{ key: string; on: boolean; editing: boolean; draft: string; busy: boolean; msg: string | null; err: string | null }>(() => ({
+    key,
+    on: Boolean(readEmailAlerts()[key]),
+    editing: false,
+    draft: readAlertEmail(),
+    busy: false,
+    msg: null,
+    err: null,
+  }));
+  const emCur = em.key === key ? em : { key, on: Boolean(readEmailAlerts()[key]), editing: false, draft: readAlertEmail(), busy: false, msg: null, err: null };
+  const saveEmailAlert = async (forTarget: number, email = emCur.draft.trim()) => {
+    if (!email) return;
+    setEm({ ...emCur, busy: true, err: null, msg: null });
+    // The sweep only prices the watchlist, so track this ticket type first.
+    if (!isTracked) await onToggleTrack();
+    const r = await setEmailAlert(AWS_URL, { id: event.id, tier, target: forTarget, email });
+    if (r.ok) {
+      setEm({
+        ...emCur,
+        on: true,
+        editing: false,
+        draft: email,
+        busy: false,
+        err: null,
+        msg: !r.configured
+          ? "Saved. Sending isn't switched on at our end yet — you'll get it once it is."
+          : r.alreadyUnder
+            ? "Saved. It's already under your target, so the next price check will email you."
+            : null,
+      });
+    } else {
+      setEm({ ...emCur, busy: false, err: r.code === "not_tracked" ? "Track this ticket type first, then try again." : r.error });
+    }
+  };
+  const stopEmailAlert = async () => {
+    setEm({ ...emCur, on: false, editing: false, busy: false, msg: null, err: null });
+    await clearEmailAlert(AWS_URL, { id: event.id, tier, email: readAlertEmail() || emCur.draft.trim() });
+  };
   const saveTarget = () => {
     const v = Math.round(Number(draft));
     if (!Number.isFinite(v) || v <= 0) return;
@@ -2558,10 +2709,13 @@ function VerdictHero({
     // First target on this device: ask for notifications right away while
     // we still have the click (browsers ignore prompts that aren't from one).
     if (notify === "default") void enableNotify(v);
+    // Keep an existing email alert on the new number.
+    if (emCur.on) void saveEmailAlert(v, readAlertEmail());
   };
   const clearTarget = () => {
     writeTarget(key, null);
     setTargetState(null);
+    if (emCur.on) void stopEmailAlert();
   };
   const hit = target != null && now != null && now <= target;
 
@@ -2708,9 +2862,11 @@ function VerdictHero({
                   <span className={cn("block text-[11px]", hit ? "text-emerald-700" : "text-blue-700")}>
                     {hit
                       ? "the price is at or under your target"
-                      : notify === "granted"
-                        ? "we'll notify you when it hits · this device"
-                        : "flagged in Price Watch when it hits · this device"}
+                      : emCur.on
+                        ? "we'll email you when it hits"
+                        : notify === "granted"
+                          ? "we'll notify you when it hits · this device"
+                          : "flagged in Price Watch when it hits · this device"}
                   </span>
                 </span>
                 <span
@@ -2743,7 +2899,17 @@ function VerdictHero({
               </Button>
             )}
             {target != null && !editing && (
-              <TargetNotifyRow state={notify} onEnable={() => void enableNotify(target)} />
+              <div className="flex flex-col gap-1.5">
+                <TargetNotifyRow state={notify} onEnable={() => void enableNotify(target)} />
+                <TargetEmailRow
+                  state={emCur}
+                  onEdit={() => setEm({ ...emCur, editing: true, err: null, msg: null })}
+                  onDraft={(v) => setEm({ ...emCur, draft: v })}
+                  onCancel={() => setEm({ ...emCur, editing: false, err: null })}
+                  onSave={() => void saveEmailAlert(target)}
+                  onStop={() => void stopEmailAlert()}
+                />
+              </div>
             )}
 
             {(buyUrl || event.url) && (

@@ -238,6 +238,120 @@ exports.handler = async (event) => {
     return `We have ${readings.length} logged price readings over the last ${spanDays} day(s): get-in price went from $${first.p} to $${last.p} (${pct >= 0 ? '+' : ''}${pct}%). Lowest logged: $${Math.min(...lows)}, highest: $${Math.max(...lows)}.`;
   };
 
+  // ---- Email alerts on a target price ------------------------------------
+  // One registry item (PK 'ALERTS', SK 'LIST', alerts_json) holds every
+  // alert: { id, tier, target, email, created_at, hit_target?, hit_p?, hit_at? }.
+  // The sweep checks them after it writes readings and sends one email per
+  // (alert, target) through SES; the hit_* fields stop repeats and are
+  // cleared when the price climbs back above the target, so a later dip
+  // mails again. Sending needs ALERT_FROM (a verified SES identity) on the
+  // Lambda and ses:SendEmail on its role — until then alert_set still saves
+  // and the sweep reports `alerts.errors` in sweep_status.
+  const alertTools = (t) => {
+    const { GetItemCommand } = require('@aws-sdk/client-dynamodb');
+    const MAX_ALERTS = 200, MAX_PER_EMAIL = 15;
+    const normEmail = (v) => String(v || '').trim().toLowerCase().slice(0, 120);
+    const validEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+    const alertKey = (a) => `${a.id}#${a.tier || ''}#${a.email}`;
+    const getAlerts = async () => {
+      try {
+        const out = await t.ddb.send(new GetItemCommand({ TableName: t.TABLE, Key: t.marshall({ event_id: 'ALERTS', date: 'LIST' }) }));
+        if (!out.Item) return [];
+        const list = JSON.parse(t.unmarshall(out.Item).alerts_json || '[]');
+        return Array.isArray(list) ? list : [];
+      } catch { return []; }
+    };
+    const putAlerts = async (list) => {
+      await t.ddb.send(new t.PutItemCommand({
+        TableName: t.TABLE,
+        Item: t.marshall({ event_id: 'ALERTS', date: 'LIST', alerts_json: JSON.stringify(list), updated_at: new Date().toISOString() }),
+      }));
+    };
+    const publicAlert = (a) => ({ id: a.id, tier: a.tier || null, target: a.target, email: a.email, created_at: a.created_at, hit_at: a.hit_at || null, hit_p: a.hit_p ?? null });
+    const APP_URL = process.env.APP_URL || 'https://csnorris1.github.io/Seatgeniusai/';
+    const API_URL = process.env.API_URL || 'https://vebhfm3r55.execute-api.us-east-2.amazonaws.com';
+    const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const money = (n) => `$${Math.round(n).toLocaleString('en-US')}`;
+    const sendEmail = async (to, subject, text, html) => {
+      const from = process.env.ALERT_FROM;
+      if (!from) throw new Error('ALERT_FROM is not set on the Lambda (a verified SES sender)');
+      const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+      const ses = new SESv2Client({});
+      await ses.send(new SendEmailCommand({
+        FromEmailAddress: from,
+        Destination: { ToAddresses: [to] },
+        Content: { Simple: { Subject: { Data: subject }, Body: { Text: { Data: text }, Html: { Data: html } } } },
+      }));
+    };
+    // The "your target hit" mail: what it is now, the target, when the event
+    // is, open-in-SeatGenius + buy links, and a one-click stop link.
+    const sendHitEmail = async (a, e, price) => {
+      const what = a.tier || 'Cheapest available';
+      const when = e.datetime_local ? new Date(e.datetime_local).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const open = `${APP_URL}?open=${encodeURIComponent(String(a.id))}${a.tier ? `&tier=${encodeURIComponent(a.tier)}` : ''}`;
+      const stop = `${API_URL}/search?action=alert_clear&event_id=${encodeURIComponent(String(a.id))}${a.tier ? `&tier=${encodeURIComponent(a.tier)}` : ''}&email=${encodeURIComponent(a.email)}`;
+      const subject = `${e.title}: ${what} is ${money(price)} (your target ${money(a.target)})`;
+      const lines = [
+        `${e.title}${when ? ` · ${when}` : ''}${e.venue ? ` · ${e.venue}` : ''}`,
+        '',
+        `${what} is now ${money(price)}. Your target was ${money(a.target)}.`,
+        e.last_avg != null ? `Typical price: ${money(e.last_avg)}.` : null,
+        '',
+        `Open in SeatGenius: ${open}`,
+        e.url ? `Buy tickets: ${e.url}` : null,
+        '',
+        `Stop this alert: ${stop}`,
+        'SeatGenius · we log resale prices around the clock and tell you when to buy.',
+      ].filter(v => v != null);
+      const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
+  <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin:0 0 6px">Target price hit</p>
+  <h2 style="margin:0 0 4px;font-size:20px">${esc(e.title)}</h2>
+  <p style="margin:0 0 16px;color:#475569">${esc([when, e.venue].filter(Boolean).join(' · '))}</p>
+  <p style="font-size:16px;margin:0 0 4px"><strong>${esc(what)}</strong> is now <strong style="color:#047857">${money(price)}</strong>.</p>
+  <p style="margin:0 0 16px;color:#475569">Your target was ${money(a.target)}${e.last_avg != null ? ` · typical ${money(e.last_avg)}` : ''}.</p>
+  <p style="margin:0 0 20px">
+    <a href="${esc(open)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600">Open in SeatGenius</a>
+    ${e.url ? `&nbsp; <a href="${esc(e.url)}" style="display:inline-block;color:#2563eb;text-decoration:none;padding:10px 6px;font-weight:600">Buy tickets →</a>` : ''}
+  </p>
+  <p style="font-size:12px;color:#94a3b8">You asked SeatGenius to email ${esc(a.email)} when this ticket type reached ${money(a.target)}. <a href="${esc(stop)}" style="color:#94a3b8">Stop this alert</a>.</p>
+</div>`;
+      await sendEmail(a.email, subject, lines.join('\n'), html);
+    };
+    // Run after a sweep: `entries` is the watchlist with fresh last_p values.
+    const checkAlerts = async (entries, nowISO) => {
+      const alerts = await getAlerts();
+      if (!alerts.length) return null;
+      const byKey = new Map(entries.map(e => [`${e.id}#${e.tier || ''}`, e]));
+      const result = { checked: alerts.length, sent: 0, errors: [] };
+      let changed = false;
+      const keep = [];
+      for (const a of alerts) {
+        const e = byKey.get(`${a.id}#${a.tier || ''}`);
+        if (!e) { changed = true; continue; } // event passed or was untracked
+        keep.push(a);
+        const price = e.last_p;
+        if (price == null) continue;
+        const hit = price <= a.target;
+        if (!hit) {
+          if (a.hit_target != null) { delete a.hit_target; delete a.hit_p; delete a.hit_at; changed = true; }
+          continue;
+        }
+        if (a.hit_target === a.target) continue; // already mailed for this target
+        try {
+          await sendHitEmail(a, e, price);
+          a.hit_target = a.target; a.hit_p = price; a.hit_at = nowISO;
+          result.sent++;
+          changed = true;
+        } catch (err) {
+          result.errors.push(`${a.email} ${a.id}: ${err && err.message ? err.message : 'send failed'}`);
+        }
+      }
+      if (changed) { try { await putAlerts(keep); } catch { /* next sweep retries */ } }
+      return result;
+    };
+    return { MAX_ALERTS, MAX_PER_EMAIL, normEmail, validEmail, alertKey, getAlerts, putAlerts, publicAlert, sendEmail, sendHitEmail, checkAlerts };
+  };
+
   try {
     // Event search. `q` searches every event type (concerts, sports, theater…);
     // the legacy `team` param keeps the old MLB-only behavior (the deploy
@@ -647,6 +761,81 @@ Keep it concise and conversational. Bold the key insights.`;
       const next = list.filter(e => String(e.id) !== String(event_id) || (params.tier != null && (e.tier || null) !== utier));
       if (next.length !== list.length) await t.putTracked(next);
       return respond(200, { ok: true, count: next.length });
+    }
+
+    // Email me when this ticket type reaches my target. One alert per
+    // (event, tier, email); calling again updates the target and re-arms it.
+    // The event must already be tracked — the sweep only prices the watchlist.
+    if (action === 'alert_set') {
+      const t = priceHistoryTools();
+      const al = alertTools(t);
+      const email = al.normEmail(params.email);
+      const target = Math.round(Number(params.target));
+      if (!event_id) return respond(400, { error: 'event_id is required' });
+      if (!al.validEmail(email)) return respond(400, { error: 'That email address doesn\'t look right.' });
+      if (!Number.isFinite(target) || target <= 0 || target > 100000) return respond(400, { error: 'target must be a price in dollars' });
+      const tier = (params.tier || '').trim().slice(0, 40) || null;
+      const tracked = await t.getTracked();
+      const entry = tracked.find(e => String(e.id) === String(event_id) && (e.tier || null) === tier);
+      if (!entry) return respond(409, { error: 'Track this ticket type first so the sweep prices it.', code: 'not_tracked' });
+      const alerts = await al.getAlerts();
+      const key = al.alertKey({ id: String(event_id), tier, email });
+      const existing = alerts.find(a => al.alertKey(a) === key);
+      const nowISO = new Date().toISOString();
+      if (existing) {
+        if (existing.target !== target) { existing.target = target; delete existing.hit_target; delete existing.hit_p; delete existing.hit_at; }
+        existing.updated_at = nowISO;
+      } else {
+        if (alerts.length >= al.MAX_ALERTS) return respond(409, { error: 'Alert list is full.' });
+        if (alerts.filter(a => a.email === email).length >= al.MAX_PER_EMAIL) return respond(409, { error: `That address already has ${al.MAX_PER_EMAIL} alerts.` });
+        alerts.push({ id: String(event_id), ...(tier ? { tier } : {}), target, email, created_at: nowISO });
+      }
+      await al.putAlerts(alerts);
+      // Already under the target? Say so, and let the next sweep send the mail
+      // (it has the fresh price and the SES plumbing).
+      const already = entry.last_p != null && entry.last_p <= target;
+      return respond(200, { ok: true, target, email, tier, configured: Boolean(process.env.ALERT_FROM), already_under: already, last_p: entry.last_p ?? null });
+    }
+
+    // Remove one email alert (also the "stop this alert" link in the mail).
+    if (action === 'alert_clear') {
+      const t = priceHistoryTools();
+      const al = alertTools(t);
+      const email = al.normEmail(params.email);
+      if (!event_id || !email) return respond(400, { error: 'event_id and email are required' });
+      const tier = (params.tier || '').trim().slice(0, 40) || null;
+      const alerts = await al.getAlerts();
+      const next = alerts.filter(a => !(String(a.id) === String(event_id) && (a.tier || null) === tier && a.email === email));
+      if (next.length !== alerts.length) await al.putAlerts(next);
+      return respond(200, { ok: true, removed: alerts.length - next.length, message: 'Alert stopped. You can close this page.' });
+    }
+
+    // The alerts one address has set up (the app uses it to show "email on").
+    if (action === 'alerts') {
+      const t = priceHistoryTools();
+      const al = alertTools(t);
+      const email = al.normEmail(params.email);
+      if (!al.validEmail(email)) return respond(400, { error: 'email is required' });
+      const alerts = (await al.getAlerts()).filter(a => a.email === email).map(al.publicAlert);
+      return respond(200, { alerts, configured: Boolean(process.env.ALERT_FROM) });
+    }
+
+    // Send one test email to check the SES setup (needs LOG_TOKEN once set).
+    if (action === 'alert_test') {
+      const LOG_TOKEN = process.env.LOG_TOKEN;
+      if (LOG_TOKEN && params.token !== LOG_TOKEN) return respond(403, { error: 'Forbidden' });
+      const t = priceHistoryTools();
+      const al = alertTools(t);
+      const email = al.normEmail(params.email);
+      if (!al.validEmail(email)) return respond(400, { error: 'email is required' });
+      try {
+        await al.sendEmail(email, 'SeatGenius test: email alerts are working',
+          'This is a test from SeatGenius. Target-price emails will come from this address.',
+          '<p>This is a test from <strong>SeatGenius</strong>. Target-price emails will come from this address.</p>');
+        return respond(200, { ok: true, from: process.env.ALERT_FROM });
+      } catch (err) {
+        return respond(502, { error: err.message, from: process.env.ALERT_FROM || null });
+      }
     }
 
     if (action === 'history') {
@@ -1072,9 +1261,15 @@ Keep it concise and conversational. Bold the key insights.`;
         } catch { noprice++; }
       }
       if (written) await t.putTracked(upcoming);
-      await saveStatus({ due: due.length, logged: written, no_price: noprice, batches: batchStatus, ...(errors.length ? { errors } : {}) });
+      // 5) Email alerts: anyone whose target this sweep reached gets a mail.
+      let alerts = null;
+      if (written) {
+        try { alerts = await alertTools(t).checkAlerts(upcoming, nowISO); }
+        catch (err) { alerts = { checked: 0, sent: 0, errors: [err && err.message ? err.message : 'alert check failed'] }; }
+      }
+      await saveStatus({ due: due.length, logged: written, no_price: noprice, batches: batchStatus, ...(alerts ? { alerts } : {}), ...(errors.length ? { errors } : {}) });
 
-      return respond(200, { logged: written, due: due.length, batches: batches.length, tracked: upcoming.length, no_price: noprice, at: nowISO, ...(errors.length ? { errors } : {}) });
+      return respond(200, { logged: written, due: due.length, batches: batches.length, tracked: upcoming.length, no_price: noprice, at: nowISO, ...(alerts ? { alerts } : {}), ...(errors.length ? { errors } : {}) });
     }
 
     // What the last sweep did: which events were due, per-batch outcome

@@ -158,3 +158,99 @@ export function showEnabledNotification(entry: AlertEntry, target: number) {
     { tag: "target:enabled" },
   );
 }
+
+// ---- Email alerts (server-side, sent by the hourly sweep) -----------------
+// The address is remembered on this device; which (event, tier) has an email
+// alert is mirrored locally so the hero can show "email on" without a fetch,
+// and re-synced from the API when the address is known.
+
+const EMAIL_KEY = "sg-alert-email";
+const EMAIL_ALERTS_KEY = "sg-email-alerts";
+
+export function readAlertEmail(): string {
+  try {
+    return localStorage.getItem(EMAIL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+export function writeAlertEmail(email: string) {
+  try {
+    localStorage.setItem(EMAIL_KEY, email);
+  } catch {
+    /* convenience only */
+  }
+}
+
+export type EmailAlerts = Record<string, { target: number }>;
+export function readEmailAlerts(): EmailAlerts {
+  try {
+    return JSON.parse(localStorage.getItem(EMAIL_ALERTS_KEY) || "{}") as EmailAlerts;
+  } catch {
+    return {};
+  }
+}
+export function writeEmailAlerts(all: EmailAlerts) {
+  try {
+    localStorage.setItem(EMAIL_ALERTS_KEY, JSON.stringify(all));
+  } catch {
+    /* convenience only */
+  }
+}
+
+export type EmailAlertResult = { ok: true; configured: boolean; alreadyUnder: boolean } | { ok: false; error: string; code?: string };
+
+export async function setEmailAlert(
+  apiUrl: string,
+  a: { id: string | number; tier?: string | null; target: number; email: string },
+): Promise<EmailAlertResult> {
+  const qs = new URLSearchParams({ action: "alert_set", event_id: String(a.id), target: String(a.target), email: a.email });
+  if (a.tier) qs.set("tier", a.tier);
+  try {
+    const res = await fetch(`${apiUrl}/search?${qs.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      // A Lambda without this action answers "Invalid action".
+      const msg = data.error === "Invalid action" ? "Email alerts aren't switched on yet." : data.error || "Couldn't save the alert. Try again.";
+      return { ok: false, error: msg, code: data.code };
+    }
+    const all = readEmailAlerts();
+    all[entryKey(a)] = { target: a.target };
+    writeEmailAlerts(all);
+    writeAlertEmail(a.email);
+    return { ok: true, configured: Boolean(data.configured), alreadyUnder: Boolean(data.already_under) };
+  } catch {
+    return { ok: false, error: "Couldn't reach SeatGenius. Try again." };
+  }
+}
+
+export async function clearEmailAlert(apiUrl: string, a: { id: string | number; tier?: string | null; email: string }): Promise<boolean> {
+  const all = readEmailAlerts();
+  delete all[entryKey(a)];
+  writeEmailAlerts(all);
+  const qs = new URLSearchParams({ action: "alert_clear", event_id: String(a.id), email: a.email });
+  if (a.tier) qs.set("tier", a.tier);
+  try {
+    const res = await fetch(`${apiUrl}/search?${qs.toString()}`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Pull this address's alerts from the API so a second device shows the truth.
+export async function syncEmailAlerts(apiUrl: string, email: string): Promise<EmailAlerts | null> {
+  if (!email) return null;
+  try {
+    const res = await fetch(`${apiUrl}/search?action=alerts&email=${encodeURIComponent(email)}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { alerts?: { id: string; tier: string | null; target: number }[] };
+    if (!Array.isArray(data.alerts)) return null;
+    const all: EmailAlerts = {};
+    for (const a of data.alerts) all[entryKey(a)] = { target: a.target };
+    writeEmailAlerts(all);
+    return all;
+  } catch {
+    return null;
+  }
+}
