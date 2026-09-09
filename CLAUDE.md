@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Notes
+
+`docs/notes/` is the shared memory drive: session notes and gotchas that every Claude session should read first (`docs/notes/README.md` lists them). Add a dated note when a session changes something non-obvious.
+
 ## Commands
 
 - `npm run dev` — Start Vite dev server with HMR
