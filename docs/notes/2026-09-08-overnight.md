@@ -24,3 +24,9 @@
 ## Reference
 - Design canvas: https://claude.ai/code/artifact/77427b16-77a4-4ff8-ab38-77e8216e79bf
 - Commits: b3d4075, a05cfd3, d1bfdad, 1938229, 485d761, 44bbdad, 4d0308b
+
+## 2026-09-09 update: API balance ran dry → low-burn sweep
+- Anthropic API credits hit zero on Sep 9 (sweep was ~$12/day: 3 web-search calls/hour). `sweep_status` showed every batch failing with "credit balance is too low".
+- Fix deployed (commit f653a8c, live on the Lambda 10:23 CT): one Claude call per sweep (`MAX_BATCHES = 1`), cadence 2h inside 48h / 6h inside a week / daily beyond, deep watch paused until `DEEP_PAUSED_UNTIL` (2026-09-14). ~$3–4/day.
+- To restore the old behaviour later: set `MAX_BATCHES` back to 3 and the cadence to 1h/3h/6h/24h in `api/search.js`, redeploy with `aws lambda update-function-code --function-name seatgenius-search --region us-east-2 --zip-file fileb://search.zip` (zip contains just `search.js`).
+- Logging resumes on its own once the balance is topped up (Plans & Billing); nothing else to redeploy.
