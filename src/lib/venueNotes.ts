@@ -23,9 +23,10 @@ export type VenueGuide = {
   /**
    * Which schematic to draw the tiers on: ballpark (VenueMap.tsx), arena
    * (ArenaMap.tsx), stadium (StadiumMap.tsx — end-stage for concerts),
-   * amphitheater (AmphitheaterMap.tsx) or theater (TheaterMap.tsx).
+   * amphitheater (AmphitheaterMap.tsx), theater (TheaterMap.tsx) or grounds
+   * (GroundsMap.tsx — golf tournaments).
    */
-  map?: "ballpark" | "arena" | "stadium" | "amphitheater" | "theater";
+  map?: "ballpark" | "arena" | "stadium" | "amphitheater" | "theater" | "grounds";
 };
 
 const MLB_TEAMS =
@@ -94,6 +95,40 @@ const SPORT_GUIDES: GuideEntry[] = [
         { label: "TickPick on last-minute buying", url: "https://www.tickpick.com/blog/last-minute-ticket-buying/" },
         { label: "SeatGeek on arena seats", url: "https://seatgeek.com/blog/best-seats-for-arena-concerts-how-to-choose-the-right-view" },
         { label: "Marketplace fee comparison", url: "https://www.tixparley.com/blog/ticket-resale-fees-compared" },
+      ],
+    },
+  },
+  {
+    // Golf: PGA Tour events, majors, Presidents/Ryder Cup. Title-matched;
+    // "US Open" alone is NOT matched (tennis).
+    match: /\bgolf\b|presidents cup|ryder cup|\bpga\b|\blpga\b|masters tournament|open championship|players championship|solheim cup|\bpga tour\b/i,
+    onlyCategory: "Sports",
+    guide: {
+      name: "Golf tournaments",
+      map: "grounds",
+      tiers: ["Grounds pass", "Hospitality", "Grandstand (reserved seat)", "Clubhouse / premium"],
+      seating: [
+        { tier: "Grounds pass", where: "Walk the course; public grandstands are first-come. Best value: practice rounds. Avoid Saturday and Sunday." },
+        { tier: "Hospitality", where: "Club venue with food, bar and one hole's view. Cheapest midweek; may need a separate grounds ticket." },
+        { tier: "Grandstand (reserved seat)", where: "Reserved seat at one hole or stadium green. Worth it Fri-Sun; skip midweek when open stands are empty." },
+        { tier: "Clubhouse / premium", where: "Suites, cabanas and clubhouse decks, all-inclusive. Only worth it for the final rounds, never last-minute." },
+      ],
+      notes: [
+        "Face price ladders by day: WM Phoenix Open Fri-Sat GA runs about 67% above Wed/Thu/Sun, and Mon-Tue is free.",
+        "Practice rounds are the cheap end of every golf week; Saturday and final-round Sunday carry the demand peak.",
+        "Hospitality often excludes course access - the PGA Championship sells club venues on top of a separate grounds ticket.",
+        "Team events sell out at face: Presidents Cup hospitality lost its Thu-Sat days early, so resale is the only door left.",
+        "Ryder Cup Europe cancels tickets found on resale platforms, so secondary listings for it carry real voiding risk.",
+        "Parking at big venues is remote, shuttle-only, must be reserved in advance and is not sold on-site on the day.",
+      ],
+      sources: [
+        { label: "2026 Presidents Cup (Medinah) tickets", url: "https://www.presidentscup.com/tickets" },
+        { label: "2026 Presidents Cup hospitality venues", url: "https://www.presidentscup.com/hospitality" },
+        { label: "2026 Presidents Cup parking & transport", url: "https://www.presidentscup.com/parking" },
+        { label: "2027 Ryder Cup tickets (ballot & resale policy)", url: "https://www.rydercup.com/tickets" },
+        { label: "PGA Championship tickets & hospitality", url: "https://www.pgachampionship.com/tickets" },
+        { label: "WM Phoenix Open general admission day pricing", url: "https://wmphoenixopen.com/tickets-packages/general-admission/" },
+        { label: "TickPick: last-minute ticket buying", url: "https://www.tickpick.com/blog/last-minute-ticket-buying/" },
       ],
     },
   },

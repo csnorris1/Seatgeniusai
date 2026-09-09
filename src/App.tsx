@@ -45,6 +45,7 @@ import { ArenaMap } from "@/components/ArenaMap";
 import { StadiumMap } from "@/components/StadiumMap";
 import { AmphitheaterMap } from "@/components/AmphitheaterMap";
 import { TheaterMap } from "@/components/TheaterMap";
+import { GroundsMap } from "@/components/GroundsMap";
 import type { VenueGuide } from "@/lib/venueNotes";
 import type { MapZone } from "@/components/VenueMap";
 
@@ -393,13 +394,14 @@ function tierOptionsFor(category?: string | null, title?: string, venue?: string
   // by grounds pass — and "US Open" would otherwise match the golf rule below.
   if (/tennis/.test(t) || /arthur ashe|louis armstrong/.test(v)) return ["Promenade", "Loge", "Courtside"];
   if (/grounds admission|grounds pass/.test(t)) return ["Grounds pass"];
-  const openGrounds = /golf|cup|open|championship|invitational|classic|masters|festival|fest\b|grand prix|marathon/.test(t);
-  if (category === "Sports" && openGrounds) return ["Grounds pass", "Hospitality"];
   // A venue or sport guide (src/lib/venueNotes.ts) knows the real seating
   // levels — e.g. an MLB park's upper deck / lower outfield / lower infield /
-  // club — so prefer its ticket types over the generic stadium split.
+  // club, or a golf week's grounds / hospitality / grandstand / clubhouse —
+  // so prefer its ticket types over the generic splits below.
   const guide = guideFor({ venue, title, category });
   if (guide) return guide.tiers;
+  const openGrounds = /golf|cup|open|championship|invitational|classic|masters|festival|fest\b|grand prix|marathon/.test(t);
+  if (category === "Sports" && openGrounds) return ["Grounds pass", "Hospitality"];
   if (category === "Sports") return ["Upper level", "Lower level", "Club or suite"];
   if (category === "Concerts") return ["GA floor", "Lower bowl", "Upper bowl"];
   if (category === "Theater" || category === "Arts") return ["Orchestra", "Mezzanine", "Balcony"];
@@ -2414,6 +2416,8 @@ function GuideMap({
       return <AmphitheaterMap className="mx-auto max-w-md" {...rest} />;
     case "theater":
       return <TheaterMap className="mx-auto max-w-md" {...rest} />;
+    case "grounds":
+      return <GroundsMap className="mx-auto max-w-md" {...rest} />;
     default:
       return <BallparkMap className="mx-auto max-w-md" {...rest} />;
   }
