@@ -17,6 +17,7 @@ import {
   Clock,
   Drama,
   ExternalLink,
+  Target,
   Info,
   Laugh,
   LineChart,
@@ -40,6 +41,7 @@ import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 import { guideFor } from "@/lib/venueNotes";
+import { cheapestWindow, formatDay, formatWindow, type PriceWindow } from "@/lib/priceWindow";
 import { BallparkMap } from "@/components/VenueMap";
 import { ArenaMap } from "@/components/ArenaMap";
 import { StadiumMap } from "@/components/StadiumMap";
@@ -361,6 +363,27 @@ const sameId = (a: string | number | null | undefined, b: string | number | null
   a != null && b != null && String(a) === String(b);
 // A tracked entry is one (event, ticket type); this is its unique key.
 const tkey = (t: { id: string | number; tier?: string | null }) => `${t.id}#${t.tier || ""}`;
+
+// Target prices live on this device only (no alert backend yet): the detail
+// hero lets you set one, Price Watch flags a ticket type once it's hit.
+const TARGETS_KEY = "sg-targets";
+function readTargets(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(TARGETS_KEY) || "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+function writeTarget(key: string, value: number | null) {
+  try {
+    const all = readTargets();
+    if (value == null) delete all[key];
+    else all[key] = value;
+    localStorage.setItem(TARGETS_KEY, JSON.stringify(all));
+  } catch {
+    /* private mode etc. — targets are a convenience */
+  }
+}
 const sameEntry = (
   a: { id: string | number; tier?: string | null } | null | undefined,
   b: { id: string | number | null; tier?: string | null } | null | undefined,
@@ -907,6 +930,22 @@ export default function SeatGenius() {
     [selectedEvent, readings, sessionMeta],
   );
 
+  // Where the cheapest buying window most likely falls (category pattern +
+  // our readings). An estimate; the UI labels it as one.
+  const priceWindow = useMemo(
+    () =>
+      selectedEvent
+        ? cheapestWindow({
+            datetime_local: selectedEvent.datetime_local,
+            popularity: selectedEvent.popularity,
+            category: selectedEvent.category,
+            title: selectedEvent.title,
+            readings,
+          })
+        : null,
+    [selectedEvent, readings],
+  );
+
   const selectedId = selectedEvent?.id ?? null;
 
   // Other days of the same multi-day event, for the compare-days strip.
@@ -922,6 +961,7 @@ export default function SeatGenius() {
       <EventDetail
         event={selectedEvent}
         verdict={verdict}
+        window={priceWindow}
         readings={readings}
         isTracked={isTracked}
         trackBusy={trackBusy}
@@ -1995,8 +2035,16 @@ const factorToneClass: Record<string, string> = {
   bad: "border-orange-200 bg-orange-50 text-orange-700",
 };
 
-function BuyTimingCard({
+function VerdictHero({
+  event,
   verdict,
+  window: win,
+  readings,
+  lowestListing,
+  buyUrl,
+  score,
+  subtitle,
+  matchup,
   isTracked,
   trackBusy,
   onToggleTrack,
@@ -2007,7 +2055,15 @@ function BuyTimingCard({
   onSwitchTier,
   onTrackTier,
 }: {
+  event: Event;
   verdict: BuyVerdict;
+  window: PriceWindow | null;
+  readings: Reading[];
+  lowestListing: number | null;
+  buyUrl: string | null;
+  score: number | null;
+  subtitle: string;
+  matchup?: string | null;
   isTracked: boolean;
   trackBusy: boolean;
   onToggleTrack: () => void;
@@ -2019,87 +2075,227 @@ function BuyTimingCard({
   onTrackTier: (t: string) => void;
 }) {
   const s = verdictStyles[verdict.action];
+  const demand = demandFromPopularity(event.popularity);
   const trackedNames = trackedTiers.map((x) => x.tier || "");
   const untracked = ["", ...tierOptions].filter((o) => !trackedNames.includes(o));
+  const last = readings.length ? readings[readings.length - 1] : null;
+  const now = last?.p ?? lowestListing ?? null;
+  const typical = last?.avg ?? null;
+  const weekAgo = last ? readings.find((r) => new Date(r.t).getTime() >= new Date(last.t).getTime() - 7 * 864e5) : null;
+  const delta7 = last && weekAgo && weekAgo !== last ? last.p - weekAgo.p : null;
+  const isSession = Boolean(event.group);
+  const title = isSession ? groupTitle(event.short_title || event.title) : event.short_title || event.title;
+
+  // Target price (this device).
+  const key = tkey({ id: event.id, tier });
+  // Keyed by (event, tier) so switching events resets the editor without an effect.
+  const [tp, setTp] = useState<{ key: string; target: number | null; editing: boolean; draft: string }>(() => ({
+    key,
+    target: readTargets()[key] ?? null,
+    editing: false,
+    draft: "",
+  }));
+  const cur = tp.key === key ? tp : { key, target: readTargets()[key] ?? null, editing: false, draft: "" };
+  const { target, editing, draft } = cur;
+  const setTargetState = (v: number | null) => setTp({ ...cur, target: v });
+  const setEditing = (v: boolean) => setTp({ ...cur, editing: v });
+  const setDraft = (v: string) => setTp({ ...cur, draft: v });
+  const suggested = win?.low ? win.low[1] : now != null ? Math.round(now * 0.9) : null;
+  const saveTarget = () => {
+    const v = Math.round(Number(draft));
+    if (!Number.isFinite(v) || v <= 0) return;
+    writeTarget(key, v);
+    setTp({ ...cur, target: v, editing: false });
+  };
+  const clearTarget = () => {
+    writeTarget(key, null);
+    setTargetState(null);
+  };
+  const hit = target != null && now != null && now <= target;
+
   return (
     <Card className={cn("backdrop-blur-sm", s.border, s.bg)}>
-      <CardContent className="p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <Clock className={cn("h-5 w-5", s.title)} />
-              <span
-                className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
-                  s.badge,
-                )}
-              >
-                {s.label}
-              </span>
+      <CardContent className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0 flex-1">
+            {/* Title: desktop only — on phones the card above already shows it. */}
+            <div className="hidden items-start justify-between gap-3 lg:flex">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className={cn("mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", metaFor(event.category).chip)}>
+                  <CategoryIcon category={event.category} className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-2xl text-slate-900">{title}</h2>
+                  {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
+                  {matchup && <p className="mt-0.5 text-sm font-medium text-slate-800">{matchup}</p>}
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar className="h-4 w-4 text-slate-500" />
+                      {formatDate(event.datetime_local)}
+                      {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
+                    </span>
+                    {event.venue && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin className="h-4 w-4 text-slate-500" />
+                        {event.venue}
+                        {event.city ? `, ${event.city}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {score != null && (
+                <div className="shrink-0 text-right">
+                  <div className="text-[11px] uppercase tracking-wider text-slate-500">Deal score</div>
+                  <div className={cn("text-3xl font-semibold leading-8", scoreClass(score))}>
+                    {score}
+                    <span className="text-sm text-slate-500">/100</span>
+                  </div>
+                </div>
+              )}
             </div>
-            <h3 className={cn("mt-3 text-2xl font-semibold", s.title)}>
-              {verdict.title}
-            </h3>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">
-              {verdict.detail}
-            </p>
+
+            <div className="flex flex-wrap items-center gap-2.5 lg:mt-5">
+              <Clock className={cn("h-5 w-5", s.title)} />
+              <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider", s.badge)}>{s.label}</span>
+              {demand && (
+                <Badge variant="outline" className={cn("px-2.5 py-0 text-[11px]", demandClasses[demand])}>
+                  {demand} demand
+                </Badge>
+              )}
+            </div>
+            <h3 className={cn("mt-3 text-2xl font-semibold sm:text-3xl", s.title)}>{verdict.title}</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">{verdict.detail}</p>
+            {win && !win.now && (
+              <p className="mt-2 max-w-2xl text-sm text-slate-700">
+                Cheapest window <span className="font-medium text-slate-900">{formatWindow(win)}</span>, buy by{" "}
+                <span className="font-medium text-slate-900">{formatDay(win.buyBy)}</span>
+                <span className="text-slate-500"> · est. — {win.basis}</span>
+              </p>
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               {verdict.factors.map((f, i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                    factorToneClass[f.tone],
-                  )}
-                >
+                <span key={i} className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium", factorToneClass[f.tone])}>
                   {f.label}
                 </span>
               ))}
             </div>
           </div>
-          <div className="flex shrink-0 flex-col items-stretch gap-2">
-            {/* Ticket types already tracked for this event: switch between
-                their curves, or add another one. */}
-            {trackedTiers.length > 0 && (
-              <div className="flex max-w-[16rem] flex-wrap justify-end gap-1.5">
-                {trackedTiers.map((x) => {
-                  const name = x.tier || "";
-                  const active = name === tier && isTracked;
-                  return (
-                    <button
-                      key={name || "any"}
-                      type="button"
-                      onClick={() => onSwitchTier(name)}
-                      aria-pressed={active}
-                      className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                        active
-                          ? "border-blue-300 bg-blue-100 text-blue-800"
-                          : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
-                      )}
-                    >
-                      {name || "Cheapest available"}
-                      {x.last_p != null && <span className="ml-1 tabular-nums text-slate-500">${x.last_p}</span>}
-                    </button>
-                  );
-                })}
+
+          {/* Price + action rail */}
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-60">
+            <div className={cn("rounded-lg border bg-white px-4 py-3", s.border)}>
+              <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                {tier || "Cheapest available"} · now
               </div>
-            )}
-            {isTracked && untracked.some((o) => o !== "") && (
-              <select
-                value=""
-                disabled={trackBusy}
-                onChange={(e) => { if (e.target.value !== "") onTrackTier(e.target.value); }}
-                aria-label="Track another ticket type"
-                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+              <div className="mt-0.5 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-slate-900">{now != null ? `$${Math.round(now)}` : "—"}</span>
+                {delta7 != null && delta7 !== 0 && (
+                  <span className={cn("text-xs font-semibold", delta7 < 0 ? "text-emerald-700" : "text-orange-700")}>
+                    {delta7 < 0 ? "▼" : "▲"} ${Math.abs(Math.round(delta7))} this week
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                <div>
+                  Typical
+                  <div className="text-sm font-semibold text-slate-900">{typical != null ? `$${Math.round(typical)}` : "—"}</div>
+                </div>
+                <div>
+                  {win?.now ? "Best price" : "Predicted low"}
+                  <div className="text-sm font-semibold text-emerald-700">
+                    {win?.low ? (win.now || win.low[0] === win.low[1] ? `$${win.low[0]}` : `$${win.low[0]}–${win.low[1]}`) : "—"}
+                  </div>
+                </div>
+              </div>
+              {win && !win.now && (
+                <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-600">
+                  Window <span className="font-medium text-slate-900">{formatWindow(win)}</span> · buy by{" "}
+                  <span className="font-medium text-slate-900">{formatDay(win.buyBy)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Target price */}
+            {editing ? (
+              <form
+                className="flex gap-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveTarget();
+                }}
               >
-                <option value="">+ Track another ticket type…</option>
-                {untracked.filter((o) => o !== "").map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
+                    placeholder={suggested != null ? String(suggested) : "target"}
+                    aria-label="Target price"
+                    className="h-9 w-full rounded-md border border-slate-300 bg-white pl-6 pr-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">Save</Button>
+                <Button type="button" variant="outline" onClick={() => setEditing(false)} className="border-slate-300 bg-white px-2.5 text-slate-700">
+                  <X className="h-4 w-4" />
+                </Button>
+              </form>
+            ) : target != null ? (
+              <button
+                type="button"
+                onClick={() => setTp({ ...cur, draft: String(target), editing: true })}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm",
+                  hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-blue-200 bg-blue-50 text-blue-900",
+                )}
+              >
+                <span>
+                  {hit ? "Target hit" : "Target"} <span className="font-semibold">${target}</span>
+                  <span className={cn("block text-[11px]", hit ? "text-emerald-700" : "text-blue-700")}>
+                    {hit ? "the price is at or under your target" : "flagged in Price Watch when it hits · this device"}
+                  </span>
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearTarget();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearTarget();
+                    }
+                  }}
+                  aria-label="Clear target"
+                  className="rounded p-1 text-slate-500 hover:text-slate-900"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            ) : (
+              <Button
+                onClick={() => setTp({ ...cur, draft: suggested != null ? String(suggested) : "", editing: true })}
+                className="bg-blue-600 text-white hover:bg-blue-700"
+              >
+                <Target className="h-4 w-4" />
+                {suggested != null ? `Set a target at $${suggested}` : "Set a target price"}
+              </Button>
             )}
-            {/* Ticket type: pick before tracking. */}
+
+            {(buyUrl || event.url) && (
+              <Button asChild variant="outline" className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100">
+                <a href={buyUrl || event.url} target="_blank" rel="noopener noreferrer">
+                  Buy now{now != null ? ` · $${Math.round(now)}` : ""}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </Button>
+            )}
+
             {tierOptions.length > 0 && !isTracked && (
               <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 Ticket type
@@ -2115,31 +2311,60 @@ function BuyTimingCard({
                 </select>
               </label>
             )}
-            {isTracked && tier && (
-              <span className="text-center text-xs text-slate-600">
-                Tracking <span className="font-medium text-slate-900">{tier}</span> prices
-              </span>
-            )}
             <Button
               onClick={onToggleTrack}
               disabled={trackBusy}
               variant="outline"
-              className={cn(
-                "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
-                isTracked && "border-emerald-300 text-emerald-700",
-              )}
+              size="sm"
+              className={cn("border-slate-300 bg-white text-slate-900 hover:bg-slate-100", isTracked && "border-emerald-300 text-emerald-700")}
             >
-              {trackBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : isTracked ? (
-                <BellRing className="h-4 w-4" />
-              ) : (
-                <BellPlus className="h-4 w-4" />
-              )}
-              {isTracked ? (tier ? `Stop tracking ${tier}` : "Stop tracking") : "Track price"}
+              {trackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : isTracked ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
+              {isTracked ? (tier ? `Tracking ${tier} · stop` : "Tracking · stop") : "Track price"}
             </Button>
           </div>
         </div>
+
+        {/* Ticket types already tracked: switch curves, or add another. */}
+        {isTracked && trackedTiers.length > 0 && (
+          <div className={cn("mt-5 flex flex-wrap items-center gap-2 border-t pt-4", s.border)}>
+            <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">Ticket type</span>
+            {trackedTiers.map((x) => {
+              const name = x.tier || "";
+              const active = name === tier;
+              return (
+                <button
+                  key={name || "any"}
+                  type="button"
+                  onClick={() => onSwitchTier(name)}
+                  aria-pressed={active}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    active ? "border-blue-300 bg-blue-100 text-blue-800" : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
+                  )}
+                >
+                  {name || "Cheapest available"}
+                  {x.last_p != null && <span className="ml-1 tabular-nums text-slate-500">${x.last_p}</span>}
+                </button>
+              );
+            })}
+            {untracked.some((o) => o !== "") && (
+              <select
+                value=""
+                disabled={trackBusy}
+                onChange={(e) => {
+                  if (e.target.value !== "") onTrackTier(e.target.value);
+                }}
+                aria-label="Track another ticket type"
+                className="rounded-full border border-dashed border-slate-300 bg-transparent px-2.5 py-0.5 text-[11px] font-medium text-slate-600 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">+ another type…</option>
+                {untracked.filter((o) => o !== "").map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -2148,9 +2373,13 @@ function BuyTimingCard({
 function PriceHistoryCard({
   readings,
   isTracked,
+  window: win,
+  eventAt,
 }: {
   readings: Reading[];
   isTracked: boolean;
+  window: PriceWindow | null;
+  eventAt?: string | null;
 }) {
   return (
     <Card className="border-slate-200 bg-white backdrop-blur-sm">
@@ -2162,7 +2391,7 @@ function PriceHistoryCard({
       </CardHeader>
       <CardContent>
         {readings.length >= 2 ? (
-          <PriceChart readings={readings} />
+          <PriceChart readings={readings} window={win} eventAt={eventAt} />
         ) : (
           <p className="py-4 text-sm text-slate-500">
             {isTracked
@@ -2180,6 +2409,7 @@ function PriceHistoryCard({
 function EventDetail({
   event,
   verdict,
+  window: win,
   readings,
   isTracked,
   trackBusy,
@@ -2207,6 +2437,7 @@ function EventDetail({
 }: {
   event: Event;
   verdict: BuyVerdict;
+  window: PriceWindow | null;
   readings: Reading[];
   isTracked: boolean;
   trackBusy: boolean;
@@ -2232,79 +2463,46 @@ function EventDetail({
   score: number | null;
   onAnalyze: () => void;
 }) {
-  const demand = demandFromPopularity(event.popularity);
   const isSession = Boolean(event.group);
   const subtitle = isSession
     ? sessionLabel({ ...event, label: session?.label || event.label }, siblings.length ? siblings : [event])
     : "";
+  const lowestListing = listings.length ? Math.min(...listings.map((l) => l.price).filter((p) => p > 0)) : event.lowest_price ?? null;
+  // Chart and venue guide share a row on wide panels; without a guide the chart takes the full width.
+  const hasGuide = Boolean(guideFor({ venue: event.venue, title: event.title, category: event.category }));
 
   return (
     <div className="space-y-4">
-      {/* Title header: desktop only. On phones the detail sits directly under
-          the card that already shows the title, so repeating it is noise. */}
-      <Card className="hidden border-slate-200 bg-white backdrop-blur-sm lg:block">
-        <CardContent className="grid gap-5 p-6 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
-                <span
-                  className={cn(
-                    "mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border",
-                    metaFor(event.category).chip,
-                  )}
-                >
-                  <CategoryIcon category={event.category} className="h-5 w-5" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="text-2xl text-slate-900">
-                    {isSession ? groupTitle(event.short_title || event.title) : event.short_title || event.title}
-                  </h2>
-                  {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
-                  {session?.matchup && (
-                    <p className="mt-0.5 text-sm font-medium text-slate-800">{session.matchup}</p>
-                  )}
-                </div>
-              </div>
-              {demand && (
-                <Badge
-                  variant="outline"
-                  className={cn("shrink-0 px-3 py-1 text-sm", demandClasses[demand])}
-                >
-                  {demand} Demand
-                </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm text-slate-700">
-              <span className="inline-flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-slate-500" />
-                {formatDate(event.datetime_local)}
-                {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-slate-500" />
-                {event.venue}
-                {event.city ? `, ${event.city}` : ""}
-              </span>
-            </div>
-          </div>
-          {score != null && (
-            <div className="text-right">
-              <div className="text-xs uppercase tracking-wider text-slate-500">
-                Deal Score
-              </div>
-              <div className={cn("text-4xl font-semibold", scoreClass(score))}>
-                {score}
-                <span className="text-base text-slate-500">/100</span>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {loadingListings ? (
         <LoadingRow label="Pulling prices and trend data…" />
       ) : (
         <>
+          {(subtitle || session?.matchup) && (
+            <p className="text-sm text-slate-700 lg:hidden">
+              {subtitle}
+              {session?.matchup ? <span className="font-medium"> · {session.matchup}</span> : null}
+            </p>
+          )}
+          <VerdictHero
+            event={event}
+            verdict={verdict}
+            window={win}
+            readings={readings}
+            lowestListing={Number.isFinite(lowestListing as number) ? (lowestListing as number) : null}
+            buyUrl={buyUrl}
+            score={score}
+            subtitle={subtitle}
+            matchup={session?.matchup}
+            isTracked={isTracked}
+            trackBusy={trackBusy}
+            onToggleTrack={onToggleTrack}
+            tier={tier}
+            tierOptions={tierOptions}
+            onTierChange={onTierChange}
+            trackedTiers={trackedTiers}
+            onSwitchTier={onSwitchTier}
+            onTrackTier={onTrackTier}
+          />
           {siblings.length > 1 && (
             <Card className="border-slate-200 bg-white backdrop-blur-sm">
               <CardHeader className="pb-2">
@@ -2322,31 +2520,15 @@ function EventDetail({
               </CardContent>
             </Card>
           )}
-          {(subtitle || session?.matchup) && (
-            <p className="text-sm text-slate-700 lg:hidden">
-              {subtitle}
-              {session?.matchup ? <span className="font-medium"> · {session.matchup}</span> : null}
-            </p>
-          )}
-          <BuyTimingCard
-            verdict={verdict}
-            isTracked={isTracked}
-            trackBusy={trackBusy}
-            onToggleTrack={onToggleTrack}
-            tier={tier}
-            tierOptions={tierOptions}
-            onTierChange={onTierChange}
-            trackedTiers={trackedTiers}
-            onSwitchTier={onSwitchTier}
-            onTrackTier={onTrackTier}
-          />
-          <VenueGuideCard
-            event={event}
-            tier={tier}
-            trackedTiers={trackedTiers}
-            onPick={(t) => (trackedTiers.some((x) => (x.tier || "") === t) ? onSwitchTier(t) : onTierChange(t))}
-          />
-          <PriceHistoryCard readings={readings} isTracked={isTracked} />
+          <div className={cn("grid gap-4", hasGuide && "xl:grid-cols-2")}>
+            <PriceHistoryCard readings={readings} isTracked={isTracked} window={win} eventAt={event.datetime_local} />
+            <VenueGuideCard
+              event={event}
+              tier={tier}
+              trackedTiers={trackedTiers}
+              onPick={(t) => (trackedTiers.some((x) => (x.tier || "") === t) ? onSwitchTier(t) : onTierChange(t))}
+            />
+          </div>
           <MarketplaceCard readings={readings} />
           <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
           {platforms.length > 0 && (
