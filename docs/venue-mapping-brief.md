@@ -12,6 +12,10 @@ It picks up where the 2026-09-08 session left off.
 - `guideFor({ venue, title, category })` in venueNotes.ts resolves venue first, then category.
 - Two agents per venue produced the existing entries: one on seating layout, one on that sport's resale price behavior. Each answered in under 450 words with a URL per claim.
 
+## Status (2026-09-09, batch 2 done)
+
+Batch 2 shipped: 8 theaters (Chicago Theatre, Auditorium, Cadillac Palace, CIBC, Nederlander, Rosemont, Radio City, Beacon), 6 arenas (Chase Center, Kaseya, T-Mobile, Barclays, American Airlines Center, Ball Arena), 5 ballparks (Truist, Camden Yards, Petco, Citizens Bank, Daikin), league-wide NBA / NHL / NFL fallbacks and a golf guide with the `grounds` map. 41 guides total. Theater zones are assigned by level order (see `TheaterMap.tsx`). Note: a 44-agent workflow exhausts the session's WebSearch quota — run the next batch in a fresh session and keep it to ~20 items. Next batch ideas: remaining MLB parks (Busch, Coors, Globe Life, PNC, Kauffman, Target Field, Progressive, Comerica, T-Mobile Park, Angel Stadium), NFL stadiums with their own guides (Lambeau, Arrowhead, AT&T, SoFi, MetLife), and Chicago-area smaller rooms (Riviera, Aragon, Salt Shed, Metro).
+
 ## Status (2026-09-08)
 
 Batch 1 below is **done**: all 16 venues are in `VENUE_GUIDES` (one Opus researcher + one Opus verifier per venue; refuted section ranges were corrected from the verifier's official-chart check, refuted notes dropped). The `stadium`, `amphitheater` and `theater` maps exist and are wired through `GuideMap` in `App.tsx`. Nothing uses the `theater` map yet — the next batch should add theater venues (Chicago Theatre, Auditorium Theatre, Broadway houses) and a Theater category fallback in `SPORT_GUIDES`. The golf `grounds` map is still undrawn.
