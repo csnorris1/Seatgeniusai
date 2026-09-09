@@ -39,7 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
-import { buyTiming, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
+import { buyTiming, trendPct, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
 import { guideFor } from "@/lib/venueNotes";
 import { cheapestWindow, formatDay, formatWindow, type PriceWindow } from "@/lib/priceWindow";
 import { BallparkMap } from "@/components/VenueMap";
@@ -366,6 +366,9 @@ const tkey = (t: { id: string | number; tier?: string | null }) => `${t.id}#${t.
 
 // Target prices live on this device only (no alert backend yet): the detail
 // hero lets you set one, Price Watch flags a ticket type once it's hit.
+// A render-stable "now" (the lint rule forbids Date.now() straight in render).
+const useNow = () => useState(() => Date.now())[0];
+
 const TARGETS_KEY = "sg-targets";
 function readTargets(): Record<string, number> {
   try {
@@ -1139,7 +1142,9 @@ export default function SeatGenius() {
             )}
           </div>
 
-          <aside className="hidden min-w-0 lg:block">
+          {/* self-stretch: the sticky panel can only travel as far as its
+              parent is tall, so the aside must span the whole row. */}
+          <aside className="hidden min-w-0 lg:block lg:self-stretch">
             <div className="sticky top-[5.75rem] max-h-[calc(100vh-6.75rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
               {detail ?? <EmptyPanel />}
             </div>
@@ -1291,6 +1296,88 @@ function SessionPicker(props: PickerProps) {
 }
 
 // One card for all the days of a multi-day event on the Price Watch tab.
+// Price history for Price Watch sparklines: fetched per (event, ticket type)
+// the first time the tab shows it, four at a time, cached for the session.
+const sparkCache = new Map<string, { at: number; readings: Reading[] }>();
+const SPARK_TTL = 30 * 60e3;
+function useSparklines(entries: TrackedEvent[]): Map<string, Reading[]> {
+  const [, bump] = useState(0);
+  const keys = entries.map(tkey).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    const todo = entries.filter((e) => {
+      const c = sparkCache.get(tkey(e));
+      return !c || Date.now() - c.at > SPARK_TTL;
+    });
+    if (!todo.length) return;
+    let i = 0;
+    const worker = async () => {
+      while (!cancelled && i < todo.length) {
+        const e = todo[i++];
+        try {
+          const q = new URLSearchParams({ action: "history", event_id: String(e.id) });
+          if (e.tier) q.set("tier", e.tier);
+          const res = await fetch(`${AWS_URL}/search?${q.toString()}`);
+          const data = await res.json();
+          sparkCache.set(tkey(e), { at: Date.now(), readings: Array.isArray(data.readings) ? data.readings : [] });
+        } catch {
+          sparkCache.set(tkey(e), { at: Date.now() - SPARK_TTL + 60e3, readings: [] });
+        }
+        if (!cancelled) bump((n) => n + 1);
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(4, todo.length) }, worker));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keys]);
+  const out = new Map<string, Reading[]>();
+  for (const e of entries) {
+    const c = sparkCache.get(tkey(e));
+    if (c) out.set(tkey(e), c.readings);
+  }
+  return out;
+}
+
+// A 30-day get-in price line, no axes: shape only. The dot is the latest reading.
+function Sparkline({ readings, className }: { readings?: Reading[]; className?: string }) {
+  const W = 88, H = 22;
+  const now = useNow();
+  if (!readings) return <span className={cn("inline-block h-[22px] w-[88px] animate-pulse rounded bg-slate-100", className)} aria-hidden="true" />;
+  const cutoff = now - 30 * 864e5;
+  let pts = readings.filter((r) => new Date(r.t).getTime() >= cutoff);
+  if (pts.length < 2) pts = readings.slice(-2);
+  if (pts.length < 2) return <span className={cn("inline-block w-[88px] text-center text-[10px] text-slate-400", className)}>first reading soon</span>;
+  const ts = pts.map((r) => new Date(r.t).getTime());
+  const t0 = Math.min(...ts), t1 = Math.max(...ts);
+  const ps = pts.map((r) => r.p);
+  let lo = Math.min(...ps), hi = Math.max(...ps);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const x = (t: number) => (t1 === t0 ? W / 2 : 2 + ((t - t0) / (t1 - t0)) * (W - 5));
+  const y = (p: number) => 3 + (1 - (p - lo) / (hi - lo)) * (H - 6);
+  const d = pts.map((r, i) => `${i === 0 ? "M" : "L"}${x(ts[i]).toFixed(1)},${y(r.p).toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className={cn("shrink-0", className)} role="img" aria-label="30-day price trend">
+      <path d={d} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={x(t1)} cy={y(last.p)} r="2.2" fill="#2563eb" />
+    </svg>
+  );
+}
+
+// One line on why the verdict is what it is, for a watch card.
+function watchReason(e: TrackedEvent, readings: Reading[] | undefined): string | null {
+  if (!readings || readings.length < 3) return null;
+  const trend = trendPct(readings);
+  const win = cheapestWindow({ datetime_local: e.datetime_local, popularity: e.popularity, category: e.category, title: e.title, readings });
+  const parts: string[] = [];
+  if (trend != null && trend !== 0) parts.push(`${e.tier || "Get-in"} ${trend < 0 ? "down" : "up"} ${Math.abs(trend)}% in 7 days.`);
+  if (win && !win.now) parts.push(`Cheapest window ${formatWindow(win)}.`);
+  else if (win?.now && trend != null && trend > 3) parts.push("Climbing — waiting costs money.");
+  return parts.length ? parts.join(" ") : null;
+}
+
 function GroupCard({
   days: allDays,
   selectedId,
@@ -1401,17 +1488,26 @@ function GroupCard({
 // per type with its latest price. Click a chip to open that type's curve.
 function TierCard({
   entries,
+  sparks,
   selectedId,
   selectedTier,
   onSelect,
   inlineDetail,
-}: ListProps & { entries: TrackedEvent[] }) {
+}: ListProps & { entries: TrackedEvent[]; sparks: Map<string, Reading[]> }) {
   const first = entries[0];
   const open = sameId(first.id, selectedId);
   const time = formatTime(first.datetime_local || undefined);
   const demand = demandFromPopularity(first.popularity ?? undefined);
   const priced = entries.filter((e) => e.last_p != null);
   const cheapest = priced.length > 1 ? Math.min(...priced.map((e) => e.last_p as number)) : null;
+  const lead = entries.reduce((m, e) => ((e.last_p ?? Infinity) < (m.last_p ?? Infinity) ? e : m), entries[0]);
+  const leadReadings = sparks.get(tkey(lead));
+  const verdict = buyTiming({ datetime_local: lead.datetime_local || undefined, popularity: lead.popularity, readings: leadReadings || [] });
+  const v = verdictStyles[verdict.action];
+  const reason = watchReason(lead, leadReadings);
+  const targets = readTargets();
+  const now = useNow();
+  const daysOut = first.datetime_local ? Math.round((new Date(first.datetime_local).getTime() - now) / 864e5) : null;
   return (
     <>
       <Card
@@ -1431,12 +1527,22 @@ function TierCard({
               <CategoryIcon category={first.category} className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <h3 className="text-base leading-snug text-slate-900">{first.title}</h3>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="min-w-0 text-base leading-snug text-slate-900">{first.title}</h3>
+                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", v.badge)}>
+                  {v.label}
+                </span>
+              </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5" />
                   {formatDate(first.datetime_local || undefined)}
                   {time && ` • ${time}`}
+                  {daysOut != null && daysOut >= 0 && (
+                    <span className={cn("ml-1", daysOut <= 2 ? "font-medium text-amber-700" : "text-slate-500")}>
+                      · {daysOut === 0 ? "today" : daysOut === 1 ? "tomorrow" : `${daysOut} days`}
+                    </span>
+                  )}
                 </span>
                 {first.venue && (
                   <span className="inline-flex min-w-0 items-center gap-1">
@@ -1447,19 +1553,20 @@ function TierCard({
                     </span>
                   </span>
                 )}
-                <span className="text-slate-500">{entries.length} ticket types</span>
+                {demand && (
+                  <Badge variant="outline" className={cn("px-2 py-0 text-[10px]", demandClasses[demand])}>
+                    {demand} demand
+                  </Badge>
+                )}
               </div>
-              {demand && (
-                <Badge variant="outline" className={cn("mt-2 px-2 py-0 text-[10px]", demandClasses[demand])}>
-                  {demand} demand
-                </Badge>
-              )}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-2.5 flex flex-col gap-0.5">
             {entries.map((e) => {
               const active = open && (e.tier || "") === selectedTier;
               const isCheapest = e.last_p != null && e.last_p === cheapest;
+              const target = targets[tkey(e)];
+              const hit = target != null && e.last_p != null && e.last_p <= target;
               return (
                 <button
                   key={tkey(e)}
@@ -1467,20 +1574,25 @@ function TierCard({
                   onClick={() => onSelect(trackedToEvent(e))}
                   aria-pressed={active}
                   className={cn(
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition-colors",
-                    active
-                      ? "border-blue-400 bg-blue-50 text-blue-800"
-                      : "border-slate-300 bg-white text-slate-700 hover:border-slate-400",
+                    "grid grid-cols-[minmax(0,1fr)_88px_64px] items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-slate-50",
+                    active && "bg-blue-50 hover:bg-blue-50",
                   )}
                 >
-                  <span className="font-medium">{e.tier || "Cheapest available"}</span>
-                  <span className={cn("font-semibold tabular-nums", isCheapest ? "text-emerald-700" : active ? "text-blue-800" : "text-slate-900")}>
+                  <span className="min-w-0">
+                    <span className={cn("block truncate text-xs font-medium", active ? "text-blue-800" : "text-slate-700")}>
+                      {e.tier || "Cheapest available"}
+                    </span>
+                    {hit && <span className="block text-[10px] font-medium text-emerald-700">Target ${target} hit</span>}
+                  </span>
+                  <Sparkline readings={sparks.get(tkey(e))} />
+                  <span className={cn("text-right text-sm font-semibold tabular-nums", isCheapest || hit ? "text-emerald-700" : active ? "text-blue-800" : "text-slate-900")}>
                     {e.last_p != null ? `$${e.last_p}` : "—"}
                   </span>
                 </button>
               );
             })}
           </div>
+          {reason && <p className="mt-2 text-xs text-slate-600">{reason}</p>}
         </CardContent>
       </Card>
       {open && inlineDetail}
@@ -1693,22 +1805,71 @@ function WatchView({
     }
     return out.sort((a, b) => byDate(a.date, b.date));
   }, [tracked]);
+  // Sparklines for every non-group entry (groups keep their day grid).
+  const singlesAll = useMemo(() => tracked.filter((t) => !t.group), [tracked]);
+  const sparks = useSparklines(singlesAll);
+  const [sort, setSort] = useState<"soonest" | "drop" | "verdict">("soonest");
+  const eventCount = new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size;
+  const lastAt = tracked.reduce<string | null>((m, t) => (t.last_at && (!m || t.last_at > m) ? t.last_at : m), null);
+  const now = useNow();
+  const agoMin = lastAt ? Math.max(0, Math.round((now - new Date(lastAt).getTime()) / 60e3)) : null;
+  const verdictRank = { buy: 0, soon: 1, wait: 2, track: 3 } as const;
+  const rowsSorted = useMemo(() => {
+    if (sort === "soonest") return rows;
+    const lead = (r: (typeof rows)[number]) => (r.tiers ? r.tiers : r.single ? [r.single] : r.days || []);
+    const drop = (r: (typeof rows)[number]) => {
+      const es = lead(r);
+      const vals = es.map((e) => trendPct(sparks.get(tkey(e)) || [])).filter((v): v is number => v != null);
+      return vals.length ? Math.min(...vals) : 999;
+    };
+    const rank = (r: (typeof rows)[number]) => {
+      const e = lead(r)[0];
+      if (!e) return 9;
+      return verdictRank[buyTiming({ datetime_local: e.datetime_local || undefined, popularity: e.popularity, readings: sparks.get(tkey(e)) || [] }).action];
+    };
+    return [...rows].sort((a, b) => (sort === "drop" ? drop(a) - drop(b) : rank(a) - rank(b)));
+  }, [rows, sort, sparks]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
-      <div className="mb-5 flex items-end justify-between gap-4">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl text-slate-900">Price Watch</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Events we're tracking. Prices get logged automatically around the
-            clock — tap one to see its curve and the buy-or-wait call.
+            {tracked.length
+              ? `${eventCount} ${eventCount === 1 ? "event" : "events"} · ${tracked.length} ticket ${tracked.length === 1 ? "type" : "types"}${
+                  agoMin != null ? ` · updated ${agoMin < 60 ? `${agoMin} min` : `${Math.round(agoMin / 60)} h`} ago` : ""
+                }`
+              : "Events we're tracking. Prices get logged automatically around the clock."}
           </p>
         </div>
-        <button
-          onClick={onRefresh}
-          className="text-sm text-slate-600 hover:text-slate-900"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {tracked.length > 1 && (
+            <div className="flex gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 text-xs text-slate-600" role="tablist" aria-label="Sort">
+              {(
+                [
+                  ["soonest", "Soonest"],
+                  ["drop", "Biggest drop"],
+                  ["verdict", "Verdict"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={sort === k}
+                  onClick={() => setSort(k)}
+                  className={cn("rounded-md px-2.5 py-1 transition-colors", sort === k ? "bg-slate-100 font-medium text-slate-900" : "hover:text-slate-900")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={onRefresh} className="text-sm text-slate-600 hover:text-slate-900">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {loading && <LoadingRow label="Loading your watchlist…" />}
@@ -1717,29 +1878,22 @@ function WatchView({
         <div className="rounded-lg border border-slate-200 bg-white px-5 py-10 text-center">
           <BellPlus className="mx-auto h-8 w-8 text-slate-400" />
           <p className="mt-3 text-sm text-slate-600">
-            Nothing tracked yet. Find an event in Discover and hit{" "}
-            <span className="text-slate-800">Track price</span> — we'll start
-            building its price history within the hour.
+            Nothing on watch yet. Find an event in Discover and hit{" "}
+            <span className="text-slate-800">Track price</span> — the first reading
+            lands within the hour and most curves are readable after two days.
           </p>
         </div>
       )}
 
       {!loading && rows.length > 0 && (
         <div className="grid gap-3">
-          {rows.map((row) =>
+          {rowsSorted.map((row) =>
             row.days ? (
               <GroupCard key={row.key} days={row.days} {...list} />
             ) : row.tiers ? (
-              <TierCard key={row.key} entries={row.tiers} {...list} />
+              <TierCard key={row.key} entries={row.tiers} sparks={sparks} {...list} />
             ) : row.single ? (
-              <Fragment key={row.key}>
-                <EventCard
-                  event={trackedToEvent(row.single)}
-                  selected={sameEntry(row.single, { id: list.selectedId, tier: list.selectedTier })}
-                  onSelect={list.onSelect}
-                />
-                {sameEntry(row.single, { id: list.selectedId, tier: list.selectedTier }) && list.inlineDetail}
-              </Fragment>
+              <TierCard key={row.key} entries={[row.single]} sparks={sparks} {...list} />
             ) : null,
           )}
         </div>
