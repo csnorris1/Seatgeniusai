@@ -1,6 +1,7 @@
 import { cn } from "@/components/ui/utils";
 
-import type { MapZone } from "@/components/VenueMap";
+import { ZoneLabel, type MapProps, type MapZone } from "@/components/VenueMap";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic golf tournament: the course itself is the grounds-pass zone,
 // a grandstand wraps the finishing green, hospitality venues line the
@@ -43,17 +44,7 @@ const TENTS = [
 ];
 const CLUBHOUSE = { x: 150, y: 250, w: 100, h: 36 };
 
-export function GroundsMap({
-  zones,
-  activeTier,
-  onPick,
-  className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
-  className?: string;
-}) {
+export function GroundsMap({ zones, activeTier, onPick, onHover, className }: MapProps) {
   const byZone = new Map<ZoneKey, MapZone>();
   zones.forEach((z, i) => {
     const k = zoneFor(z.tier, i);
@@ -62,8 +53,8 @@ export function GroundsMap({
   const order: ZoneKey[] = ["grounds", "grandstand", "hospitality", "clubhouse"];
   const labels: Record<ZoneKey, { x: number; y: number; short: string }> = {
     grounds: { x: 130, y: 140, short: "Grounds" },
-    grandstand: { x: G.x, y: G.y - 56, short: "Grandstand" },
-    hospitality: { x: 143, y: 216, short: "Hospitality" },
+    grandstand: { x: G.x, y: G.y - 64, short: "Grandstand" },
+    hospitality: { x: 143, y: 238, short: "Hospitality" },
     clubhouse: { x: CLUBHOUSE.x + CLUBHOUSE.w / 2, y: CLUBHOUSE.y + CLUBHOUSE.h / 2, short: "Clubhouse" },
   };
 
@@ -79,18 +70,15 @@ export function GroundsMap({
         const hover = cn(clickable && !active && "transition-colors hover:fill-[#cbd5e1]");
         const common = {
           onClick: clickable ? () => onPick!(z!.tier) : undefined,
+          onMouseEnter: onHover ? () => onHover(z?.tier ?? null) : undefined,
+          onMouseLeave: onHover ? () => onHover(null) : undefined,
           className: cn(clickable && "cursor-pointer"),
           role: clickable ? "button" : undefined,
           "aria-pressed": clickable ? active : undefined,
         };
         const l = labels[k];
         const title = <title>{z ? `${z.tier}${z.where ? ` — ${z.where}` : ""}` : l.short}</title>;
-        const text = (light: boolean) => (
-          <text x={l.x} y={l.y} textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight={active ? 600 : 500} fill={light ? "#ffffff" : "#334155"} style={{ pointerEvents: "none" }}>
-            {l.short}
-            {z?.price != null ? ` · $${z.price}` : ""}
-          </text>
-        );
+        const text = () => <ZoneLabel x={l.x} y={l.y} short={l.short} price={z?.price} range={rangeOf(z?.where)} active={active} />;
 
         if (k === "grounds") {
           // The course reads as grass unless grounds is the active tier.
@@ -103,7 +91,7 @@ export function GroundsMap({
               <circle cx={G.x} cy={G.y} r="22" fill={active ? "#60a5fa" : "#a7f3d0"} style={{ pointerEvents: "none" }} />
               <line x1={G.x + 4} x2={G.x + 4} y1={G.y - 20} y2={G.y + 2} stroke="#475569" strokeWidth="1.5" style={{ pointerEvents: "none" }} />
               <polygon points={`${G.x + 4},${G.y - 20} ${G.x + 16},${G.y - 16} ${G.x + 4},${G.y - 12}`} fill="#ef4444" style={{ pointerEvents: "none" }} />
-              {text(active)}
+              {text()}
             </g>
           );
         }
@@ -112,7 +100,7 @@ export function GroundsMap({
             <g key={k} {...common}>
               {title}
               <path d={band(30, 46, -160, 20)} fill={fill} stroke={stroke} strokeWidth={active ? 2 : 1.5} className={hover} />
-              {text(active)}
+              {text()}
             </g>
           );
         }
@@ -123,8 +111,7 @@ export function GroundsMap({
               {TENTS.map((t) => (
                 <path key={t.x} d={`M${t.x},${t.y + 16} L${t.x + t.w / 2},${t.y} L${t.x + t.w},${t.y + 16} V${t.y + 34} H${t.x} Z`} fill={fill} stroke={stroke} strokeWidth={active ? 2 : 1.5} className={hover} />
               ))}
-              <rect x={TENTS[0].x} y={TENTS[0].y + 34} width={TENTS[2].x + TENTS[2].w - TENTS[0].x} height="0" />
-              {text(active)}
+              {text()}
             </g>
           );
         }
@@ -132,7 +119,7 @@ export function GroundsMap({
           <g key={k} {...common}>
             {title}
             <rect x={CLUBHOUSE.x} y={CLUBHOUSE.y} width={CLUBHOUSE.w} height={CLUBHOUSE.h} rx="6" fill={fill} stroke={stroke} strokeWidth={active ? 2 : 1.5} className={hover} />
-            {text(active)}
+            {text()}
           </g>
         );
       })}

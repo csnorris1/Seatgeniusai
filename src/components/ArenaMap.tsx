@@ -1,6 +1,7 @@
 import { cn } from "@/components/ui/utils";
 
-import type { MapZone } from "@/components/VenueMap";
+import { ZoneLabel, type MapProps, type MapZone } from "@/components/VenueMap";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic end-stage arena for concerts: stage across one end, the floor
 // in front of it, then the lower bowl, club and upper bowl wrapping the
@@ -11,7 +12,7 @@ type ZoneKey = "floor" | "lower" | "club" | "upper";
 
 function zoneFor(tier: string, index: number): ZoneKey {
   const t = tier.toLowerCase();
-  if (/floor|pit|ga\b|general admission|orchestra/.test(t)) return "floor";
+  if (/floor|pit|ga\b|general admission|orchestra|glass|rinkside|courtside/.test(t)) return "floor";
   if (/upper|300|400|balcony|terrace|nosebleed/.test(t)) return "upper";
   if (/club|suite|200|premium|loge|mezz/.test(t)) return "club";
   if (/lower|100|bowl|riser/.test(t)) return "lower";
@@ -35,12 +36,12 @@ export function ArenaMap({
   zones,
   activeTier,
   onPick,
+  onHover,
+  stage = true,
   className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
-  className?: string;
+}: MapProps & {
+  /** Draw the end stage (concerts); games get a plain floor. */
+  stage?: boolean;
 }) {
   const byZone = new Map<ZoneKey, MapZone>();
   zones.forEach((z, i) => {
@@ -51,11 +52,14 @@ export function ArenaMap({
 
   return (
     <svg viewBox="0 20 400 360" role="img" aria-label="Arena seating map" className={cn("w-full select-none", className)}>
-      {/* stage */}
-      <rect x="110" y="30" width="180" height="42" rx="6" fill="#1e293b" />
-      <text x="200" y="56" textAnchor="middle" fontSize="12" fontWeight="600" fill="#f8fafc" letterSpacing="2">
-        STAGE
-      </text>
+      {stage && (
+        <>
+          <rect x="110" y="30" width="180" height="42" rx="6" fill="#1e293b" />
+          <text x="200" y="56" textAnchor="middle" fontSize="12" fontWeight="600" fill="#f8fafc" letterSpacing="2">
+            STAGE
+          </text>
+        </>
+      )}
 
       {order.map((k) => {
         const g = ZONES[k];
@@ -66,6 +70,8 @@ export function ArenaMap({
         const fill = active ? "#2563eb" : tracked ? "#bfdbfe" : "#e2e8f0";
         const common = {
           onClick: clickable ? () => onPick!(z!.tier) : undefined,
+          onMouseEnter: onHover ? () => onHover(z?.tier ?? null) : undefined,
+          onMouseLeave: onHover ? () => onHover(null) : undefined,
           className: cn(clickable && "cursor-pointer"),
           role: clickable ? "button" : undefined,
           "aria-pressed": clickable ? active : undefined,
@@ -85,19 +91,7 @@ export function ArenaMap({
                 className={cn(clickable && !active && "transition-colors hover:stroke-[#cbd5e1]")}
               />
             )}
-            <text
-              x={g.label[0]}
-              y={g.label[1]}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="11"
-              fontWeight={active ? 600 : 500}
-              fill={active ? "#ffffff" : "#334155"}
-              style={{ pointerEvents: "none" }}
-            >
-              {g.short}
-              {z?.price != null ? ` · $${z.price}` : ""}
-            </text>
+            <ZoneLabel x={g.label[0]} y={g.label[1]} short={g.short} price={z?.price} range={rangeOf(z?.where)} active={active} />
           </g>
         );
       })}

@@ -1,4 +1,5 @@
 import { cn } from "@/components/ui/utils";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic top-down ballpark: the field fans up from home plate, the
 // lower bowl wraps behind the plate, the club level and upper deck stack
@@ -15,6 +16,54 @@ export type MapZone = {
   price?: number | null;
   /** Whether this type is being tracked at all. */
   tracked?: boolean;
+};
+
+// Zone label shared by every schematic: the short zone name, the tracked
+// price, and the section range on a second line when the guide has one.
+export function ZoneLabel({
+  x,
+  y,
+  short,
+  price,
+  range,
+  active,
+}: {
+  x: number;
+  y: number;
+  short: string;
+  price?: number | null;
+  range?: string | null;
+  active: boolean;
+}) {
+  return (
+    <text
+      x={x}
+      y={range ? y - 6 : y}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontSize="11"
+      fontWeight={active ? 600 : 500}
+      fill={active ? "#ffffff" : "#334155"}
+      style={{ pointerEvents: "none" }}
+    >
+      {short}
+      {price != null ? ` · $${price}` : ""}
+      {range && (
+        <tspan x={x} dy="11" fontSize="8" fontWeight={500} fill={active ? "#dbeafe" : "#64748b"}>
+          {range}
+        </tspan>
+      )}
+    </text>
+  );
+}
+
+export type MapProps = {
+  zones: MapZone[];
+  activeTier: string;
+  onPick?: (tier: string) => void;
+  /** Mouse over a zone (null on leave) — the guide card shows that zone's detail. */
+  onHover?: (tier: string | null) => void;
+  className?: string;
 };
 
 type ZoneKey = "upper" | "club" | "infield" | "outfield";
@@ -56,17 +105,7 @@ const ZONES: Record<ZoneKey, { d: string; label: { x: number; y: number }; short
   outfield: { d: band(206, 236, -135, -45), label: pt(221, -90), short: "Outfield" },
 };
 
-export function BallparkMap({
-  zones,
-  activeTier,
-  onPick,
-  className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
-  className?: string;
-}) {
+export function BallparkMap({ zones, activeTier, onPick, onHover, className }: MapProps) {
   const byZone = new Map<ZoneKey, MapZone>();
   zones.forEach((z, i) => {
     const k = zoneFor(z.tier, i);
@@ -108,6 +147,8 @@ export function BallparkMap({
           <g
             key={k}
             onClick={clickable ? () => onPick!(z!.tier) : undefined}
+            onMouseEnter={onHover ? () => onHover(z?.tier ?? null) : undefined}
+            onMouseLeave={onHover ? () => onHover(null) : undefined}
             className={cn(clickable && "cursor-pointer")}
             role={clickable ? "button" : undefined}
             aria-pressed={clickable ? active : undefined}
@@ -120,21 +161,15 @@ export function BallparkMap({
               strokeWidth={active ? 2 : 1.5}
               className={cn(clickable && !active && "transition-colors hover:fill-[#cbd5e1]")}
             />
-            <text
-              x={g.label.x}
-              y={g.label.y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="11"
-              fontWeight={active ? 600 : 500}
-              fill={active ? "#ffffff" : "#334155"}
-              style={{ pointerEvents: "none" }}
-            >
-              {g.short}
-              {z?.price != null ? ` · $${z.price}` : ""}
-            </text>
           </g>
         );
+      })}
+      {/* labels last, above every band */}
+      {(Object.keys(ZONES) as ZoneKey[]).map((k) => {
+        const g = ZONES[k];
+        const z = byZone.get(k);
+        const active = Boolean(z && z.tier === activeTier);
+        return <ZoneLabel key={`l-${k}`} x={g.label.x} y={g.label.y} short={g.short} price={z?.price} range={rangeOf(z?.where)} active={active} />;
       })}
     </svg>
   );

@@ -1,6 +1,7 @@
 import { cn } from "@/components/ui/utils";
 
-import type { MapZone } from "@/components/VenueMap";
+import { ZoneLabel, type MapProps, type MapZone } from "@/components/VenueMap";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic football / soccer stadium: the field in the middle, then the
 // lower level, club or mezzanine and upper level wrapping it as three rings.
@@ -32,15 +33,12 @@ export function StadiumMap({
   zones,
   activeTier,
   onPick,
+  onHover,
   stage = false,
   className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
+}: MapProps & {
   /** Draw an end-stage for concerts (the field becomes the floor). */
   stage?: boolean;
-  className?: string;
 }) {
   const byZone = new Map<ZoneKey, MapZone>();
   zones.forEach((z, i) => {
@@ -59,25 +57,15 @@ export function StadiumMap({
         const fill = active ? "#2563eb" : tracked ? "#bfdbfe" : "#e2e8f0";
         const common = {
           onClick: clickable ? () => onPick!(z!.tier) : undefined,
+          onMouseEnter: onHover ? () => onHover(z?.tier ?? null) : undefined,
+          onMouseLeave: onHover ? () => onHover(null) : undefined,
           className: cn(clickable && "cursor-pointer"),
           role: clickable ? "button" : undefined,
           "aria-pressed": clickable ? active : undefined,
         };
         const short = k === "field" ? (stage ? "Floor" : "Field") : RINGS[k].short;
-        const label = (x: number, y: number, light: boolean) => (
-          <text
-            x={x}
-            y={y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize="11"
-            fontWeight={active ? 600 : 500}
-            fill={light ? "#ffffff" : "#334155"}
-            style={{ pointerEvents: "none" }}
-          >
-            {short}
-            {z?.price != null ? ` · $${z.price}` : ""}
-          </text>
+        const label = (x: number, y: number) => (
+          <ZoneLabel x={x} y={y} short={short} price={z?.price} range={rangeOf(z?.where)} active={active} />
         );
         const title = <title>{z ? `${z.tier}${z.where ? ` — ${z.where}` : ""}` : short}</title>;
 
@@ -114,7 +102,7 @@ export function StadiumMap({
                   </text>
                 </>
               )}
-              {label(F.x + F.w / 2, F.y + F.h / 2 + (stage ? 16 : 0), active)}
+              {label(F.x + F.w / 2, F.y + F.h / 2 + (stage ? 16 : 0))}
             </g>
           );
         }
@@ -134,7 +122,7 @@ export function StadiumMap({
               strokeWidth={g.thick}
               className={cn(clickable && !active && "transition-colors hover:stroke-[#cbd5e1]")}
             />
-            {label(F.x + F.w / 2, F.y + F.h + g.grow, active)}
+            {label(F.x + F.w / 2, F.y + F.h + g.grow)}
           </g>
         );
       })}

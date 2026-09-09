@@ -1,6 +1,7 @@
 import { cn } from "@/components/ui/utils";
 
-import type { MapZone } from "@/components/VenueMap";
+import { ZoneLabel, type MapProps, type MapZone } from "@/components/VenueMap";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic proscenium theater: the stage at the top, the orchestra fanning
 // out from it on the main floor, then the loge (front mezzanine), mezzanine
@@ -9,13 +10,27 @@ import type { MapZone } from "@/components/VenueMap";
 
 type ZoneKey = "orchestra" | "loge" | "mezzanine" | "balcony";
 
-function zoneFor(tier: string, index: number): ZoneKey {
-  const t = tier.toLowerCase();
-  if (/balcony|upper|gallery|3\d\d|rear mezz/.test(t)) return "balcony";
-  if (/loge|front mezz|box|parterre|dress circle/.test(t)) return "loge";
-  if (/mezz|2\d\d|circle/.test(t)) return "mezzanine";
-  if (/orchestra|floor|main|stalls|pit|1\d\d/.test(t)) return "orchestra";
-  return (["balcony", "mezzanine", "orchestra", "loge"] as ZoneKey[])[index] ?? "orchestra";
+// Theaters name their levels every which way (Dress Circle, Loge, Mezzanine
+// Boxes, Gallery…), so zones are assigned by level order instead of by
+// keyword: the floor level is whatever says orchestra / main floor / stalls,
+// the top level is whatever says balcony / gallery / 3rd mezzanine, and the
+// tiers listed between them (cheapest first, so top-down) fill the middle
+// bands — mezzanine first, then loge when there are two.
+function assignZones(zones: MapZone[]): Map<ZoneKey, MapZone> {
+  const out = new Map<ZoneKey, MapZone>();
+  const rest: MapZone[] = [];
+  for (const z of zones) {
+    const t = z.tier.toLowerCase();
+    if (!out.has("orchestra") && /orchestra|main floor|stalls|floor/.test(t)) out.set("orchestra", z);
+    else if (!out.has("balcony") && /balcony|gallery|3rd mezz|third mezz|upper/.test(t) && !/box/.test(t)) out.set("balcony", z);
+    else rest.push(z);
+  }
+  const middle: ZoneKey[] = rest.length >= 2 ? ["mezzanine", "loge"] : ["mezzanine"];
+  rest.forEach((z, i) => {
+    const k = middle[i] ?? (["balcony", "orchestra", "loge", "mezzanine"] as ZoneKey[]).find((kk) => !out.has(kk));
+    if (k && !out.has(k)) out.set(k, z);
+  });
+  return out;
 }
 
 const S = { x: 200, y: 40 }; // centre of the stage front
@@ -40,22 +55,8 @@ const ZONES: Record<ZoneKey, { d: string; label: { x: number; y: number }; short
   balcony: { d: band(184, 236, 45, 135), label: pt(210, 90), short: "Balcony" },
 };
 
-export function TheaterMap({
-  zones,
-  activeTier,
-  onPick,
-  className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
-  className?: string;
-}) {
-  const byZone = new Map<ZoneKey, MapZone>();
-  zones.forEach((z, i) => {
-    const k = zoneFor(z.tier, i);
-    if (!byZone.has(k)) byZone.set(k, z);
-  });
+export function TheaterMap({ zones, activeTier, onPick, onHover, className }: MapProps) {
+  const byZone = assignZones(zones);
   const order: ZoneKey[] = ["balcony", "mezzanine", "loge", "orchestra"];
 
   return (
@@ -77,6 +78,8 @@ export function TheaterMap({
           <g
             key={k}
             onClick={clickable ? () => onPick!(z!.tier) : undefined}
+            onMouseEnter={onHover ? () => onHover(z?.tier ?? null) : undefined}
+            onMouseLeave={onHover ? () => onHover(null) : undefined}
             className={cn(clickable && "cursor-pointer")}
             role={clickable ? "button" : undefined}
             aria-pressed={clickable ? active : undefined}
@@ -84,24 +87,12 @@ export function TheaterMap({
             <title>{z ? `${z.tier}${z.where ? ` — ${z.where}` : ""}` : g.short}</title>
             <path
               d={g.d}
-              fill={active ? "#2563eb" : tracked ? "#bfdbfe" : "#e2e8f0"}
+              fill={active ? "#2563eb" : tracked ? "#bfdbfe" : z ? "#e2e8f0" : "#f1f5f9"}
               stroke={active ? "#1d4ed8" : "#ffffff"}
               strokeWidth={active ? 2 : 1.5}
               className={cn(clickable && !active && "transition-colors hover:fill-[#cbd5e1]")}
             />
-            <text
-              x={g.label.x}
-              y={g.label.y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="11"
-              fontWeight={active ? 600 : 500}
-              fill={active ? "#ffffff" : "#334155"}
-              style={{ pointerEvents: "none" }}
-            >
-              {g.short}
-              {z?.price != null ? ` · $${z.price}` : ""}
-            </text>
+            {z && <ZoneLabel x={g.label.x} y={g.label.y} short={z.tier.split(" (")[0]} price={z.price} range={rangeOf(z.where)} active={active} />}
           </g>
         );
       })}

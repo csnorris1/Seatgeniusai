@@ -1,6 +1,7 @@
 import { cn } from "@/components/ui/utils";
 
-import type { MapZone } from "@/components/VenueMap";
+import { ZoneLabel, type MapProps, type MapZone } from "@/components/VenueMap";
+import { rangeOf } from "@/lib/venueNotes";
 
 // A schematic outdoor amphitheater: the stage at the top, then a fan of
 // seating spreading away from it — the pit up front, the reserved pavilion in
@@ -42,17 +43,7 @@ const ZONES: Record<ZoneKey, { d: string; label: { x: number; y: number }; short
   lawn: { d: band(168, 250, 40, 140), label: pt(209, 90), short: "Lawn" },
 };
 
-export function AmphitheaterMap({
-  zones,
-  activeTier,
-  onPick,
-  className,
-}: {
-  zones: MapZone[];
-  activeTier: string;
-  onPick?: (tier: string) => void;
-  className?: string;
-}) {
+export function AmphitheaterMap({ zones, activeTier, onPick, onHover, className }: MapProps) {
   const byZone = new Map<ZoneKey, MapZone>();
   zones.forEach((z, i) => {
     const k = zoneFor(z.tier, i);
@@ -81,6 +72,8 @@ export function AmphitheaterMap({
           <g
             key={k}
             onClick={clickable ? () => onPick!(z!.tier) : undefined}
+            onMouseEnter={onHover ? () => onHover(z?.tier ?? null) : undefined}
+            onMouseLeave={onHover ? () => onHover(null) : undefined}
             className={cn(clickable && "cursor-pointer")}
             role={clickable ? "button" : undefined}
             aria-pressed={clickable ? active : undefined}
@@ -93,19 +86,7 @@ export function AmphitheaterMap({
               strokeWidth={active ? 2 : 1.5}
               className={cn(clickable && !active && "transition-colors hover:fill-[#cbd5e1]")}
             />
-            <text
-              x={g.label.x}
-              y={g.label.y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="11"
-              fontWeight={active ? 600 : 500}
-              fill={active ? "#ffffff" : "#334155"}
-              style={{ pointerEvents: "none" }}
-            >
-              {g.short}
-              {z?.price != null ? ` · $${z.price}` : ""}
-            </text>
+            <ZoneLabel x={g.label.x} y={g.label.y} short={g.short} price={z?.price} range={rangeOf(z?.where)} active={active} />
           </g>
         );
       })}

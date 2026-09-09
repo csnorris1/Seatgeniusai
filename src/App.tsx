@@ -40,7 +40,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 import { PriceChart } from "@/components/PriceChart";
 import { buyTiming, trendPct, type BuyVerdict, type Reading, type SessionContext } from "@/lib/buyTiming";
-import { guideFor } from "@/lib/venueNotes";
+import { guideFor, rangeOf } from "@/lib/venueNotes";
 import { cheapestWindow, formatDay, formatWindow, type PriceWindow } from "@/lib/priceWindow";
 import { BallparkMap } from "@/components/VenueMap";
 import { ArenaMap } from "@/components/ArenaMap";
@@ -2742,10 +2742,11 @@ function GuideMap({
   zones: MapZone[];
   activeTier: string;
   onPick: (tier: string) => void;
+  onHover?: (tier: string | null) => void;
 }) {
   switch (map) {
     case "arena":
-      return <ArenaMap className="mx-auto max-w-sm" {...rest} />;
+      return <ArenaMap className="mx-auto max-w-sm" stage={stage} {...rest} />;
     case "stadium":
       return <StadiumMap className="mx-auto max-w-sm" stage={stage} {...rest} />;
     case "amphitheater":
@@ -2774,12 +2775,20 @@ function VenueGuideCard({
   onPick: (tier: string) => void;
 }) {
   const [more, setMore] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
   const guide = guideFor({ venue: event.venue, title: event.title, category: event.category });
   if (!guide) return null;
   const notes = more ? guide.notes : guide.notes.slice(0, 2);
   const priceOf = (t: string) => trackedTiers.find((x) => (x.tier || "") === t)?.last_p ?? null;
   const isTracked = (t: string) => trackedTiers.some((x) => (x.tier || "") === t);
-  const activeWhere = guide.seating.find((s) => s.tier === tier)?.where;
+  // 7-day trend per tracked type, when Price Watch has already fetched its history.
+  const trendOf = (t: string) => {
+    const c = sparkCache.get(tkey({ id: event.id, tier: t }));
+    return c ? trendPct(c.readings) : null;
+  };
+  const shown = guide.seating.find((s) => s.tier === (hovered ?? tier)) ?? guide.seating.find((s) => s.tier === tier);
+  const priced = guide.seating.map((s) => priceOf(s.tier)).filter((p): p is number => p != null);
+  const cheapest = priced.length > 1 ? Math.min(...priced) : null;
   return (
     <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader className="pb-2">
@@ -2789,17 +2798,18 @@ function VenueGuideCard({
         </CardTitle>
         <p className="text-xs text-slate-500">
           {guide.name}
-          {guide.map ? " · click a zone to switch or pick a ticket type" : ""}
+          {guide.map ? " · tap a zone to see what you get" : ""}
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {guide.map ? (
+        {guide.map && (
           <>
             <GuideMap
               map={guide.map}
               stage={event.category === "Concerts"}
               activeTier={tier}
               onPick={onPick}
+              onHover={setHovered}
               zones={guide.seating.map((s) => ({
                 tier: s.tier,
                 where: s.where,
@@ -2807,35 +2817,65 @@ function VenueGuideCard({
                 tracked: isTracked(s.tier),
               }))}
             />
-            {tier && activeWhere && (
-              <p className="text-center text-xs text-slate-600">
-                <span className="font-medium text-slate-900">{tier}:</span> {activeWhere}
-              </p>
+            {/* Hover / active detail strip: replaces the browser tooltip and works on touch. */}
+            {shown && (
+              <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs leading-relaxed text-slate-100">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-semibold">{shown.tier}</span>
+                  {priceOf(shown.tier) != null && <span className="font-semibold tabular-nums text-emerald-300">${priceOf(shown.tier)}</span>}
+                </div>
+                <div className="mt-0.5 text-slate-300">{shown.where}</div>
+              </div>
             )}
           </>
-        ) : (
-          <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-            {guide.seating.map((s) => {
-              const active = tier && s.tier === tier;
-              return (
-                <button
-                  type="button"
-                  key={s.tier}
-                  onClick={() => onPick(s.tier)}
-                  className={cn(
-                    "flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50",
-                    active && "bg-blue-50 hover:bg-blue-50",
-                  )}
-                >
-                  <span className={cn("shrink-0 text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>
-                    {s.tier}
-                  </span>
-                  <span className="truncate text-right text-xs text-slate-600">{s.where}</span>
-                </button>
-              );
-            })}
-          </div>
         )}
+
+        {/* Every ticket type: range, price, 7-day trend; tap to switch or pick. */}
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {guide.seating.map((s) => {
+            const active = Boolean(tier) && s.tier === tier;
+            const p = priceOf(s.tier);
+            const tracked = isTracked(s.tier);
+            const trend = tracked ? trendOf(s.tier) : null;
+            return (
+              <button
+                type="button"
+                key={s.tier}
+                onClick={() => onPick(s.tier)}
+                onMouseEnter={() => setHovered(s.tier)}
+                onMouseLeave={() => setHovered(null)}
+                aria-pressed={active}
+                className={cn(
+                  "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left hover:bg-slate-50",
+                  active && "bg-blue-50 hover:bg-blue-50",
+                )}
+              >
+                <span className="min-w-0">
+                  <span className={cn("block truncate text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>{s.tier}</span>
+                  <span className="block truncate text-[11px] text-slate-500">
+                    {rangeOf(s.where) ?? s.where.split(/\.(?:\s|$)/)[0]}
+                    {tracked ? " · tracking" : ""}
+                  </span>
+                </span>
+                <span className="text-right">
+                  {p != null ? (
+                    <>
+                      <span className={cn("block text-sm font-semibold tabular-nums", p === cheapest ? "text-emerald-700" : "text-slate-900")}>${p}</span>
+                      {trend != null && trend !== 0 && (
+                        <span className={cn("block text-[11px]", trend < 0 ? "text-emerald-700" : "text-orange-700")}>
+                          {trend < 0 ? "▼" : "▲"} {Math.abs(trend)}% · 7d
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs font-medium text-blue-600">{active ? "selected" : "+ pick"}</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <ul className="space-y-1 text-sm text-slate-700">
           {notes.map((n, i) => (
             <li key={i} className="flex gap-2">
