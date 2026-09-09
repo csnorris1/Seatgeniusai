@@ -876,14 +876,21 @@ Keep it concise and conversational. Bold the key insights.`;
       // 2) Which events are due for a reading this hour? Each event has a
       // cadence interval (hours) tied to how close it is; deep watch is 2h.
       const h = now.getUTCHours();
+      // Low-burn mode (2026-09-09): the API balance ran dry at ~$12/day, so
+      // deep watch (per-marketplace quotes, every 2h) is paused until the US
+      // Open is over and everything prices on a slower clock: 2-hourly inside
+      // 48h, 6-hourly inside a week, daily beyond that. Set DEEP_PAUSED_UNTIL
+      // to the past to restore deep watch.
+      const DEEP_PAUSED_UNTIL = new Date('2026-09-14T00:00:00Z');
+      const deepPaused = now.getTime() < DEEP_PAUSED_UNTIL.getTime();
+      const isDeep = (e) => Boolean(e.priority) && !deepPaused;
       const intervalOf = (e) => {
-        if (e.priority) return 2;
+        if (isDeep(e)) return 2;
         const dt = e.datetime_local ? new Date(e.datetime_local) : null;
         if (!dt || isNaN(dt.getTime())) return 24;
         const hrsOut = (dt.getTime() - now.getTime()) / 3600000;
-        if (hrsOut <= 48) return 1;
-        if (hrsOut <= 7 * 24) return 3;
-        if (hrsOut <= 30 * 24) return 6;
+        if (hrsOut <= 48) return 2;
+        if (hrsOut <= 7 * 24) return 6;
         return 24;
       };
       const isDue = (e) => {
@@ -899,7 +906,8 @@ Keep it concise and conversational. Bold the key insights.`;
       // last reading — with closeness as the tiebreak. That keeps a
       // tournament's hourly sessions from starving the events weeks out that
       // happen to share the hour, and vice versa.
-      const BATCH = 5, DEEP_BATCH = 4, MAX_BATCHES = 3;
+      // Cost cap: ONE Claude call per sweep in low-burn mode (was three).
+      const BATCH = 5, DEEP_BATCH = 4, MAX_BATCHES = 1;
       const hoursOut = (e) => {
         const dt = e.datetime_local ? new Date(e.datetime_local).getTime() : NaN;
         return isNaN(dt) ? Infinity : (dt - now.getTime()) / 3600000;
@@ -954,11 +962,11 @@ Keep it concise and conversational. Bold the key insights.`;
       };
 
       const priceBatch = async (batch) => {
-        const deep = batch.some(e => e.priority);
+        const deep = batch.some(isDeep);
         const lines = batch.map(e => {
           const when = e.datetime_local ? e.datetime_local.split('T')[0] : 'date TBD';
           const where = [e.venue, e.city].filter(Boolean).join(', ');
-          const tag = e.priority ? ' [DEEP: report every marketplace separately]' : '';
+          const tag = isDeep(e) ? ' [DEEP: report every marketplace separately]' : '';
           const tier = e.tier ? ` — ticket type: ${e.tier} ONLY` : '';
           // Session time + label matter when a venue hosts two sessions a day
           // (a tennis day session and night session are different tickets).
@@ -1001,8 +1009,8 @@ Keep it concise and conversational. Bold the key insights.`;
 
       const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
       const batches = [
-        ...chunk(due.filter(e => e.priority), DEEP_BATCH),
-        ...chunk(due.filter(e => !e.priority), BATCH),
+        ...chunk(due.filter(isDeep), DEEP_BATCH),
+        ...chunk(due.filter(e => !isDeep(e)), BATCH),
       ].slice(0, MAX_BATCHES);
       const priced = {};
       const errors = [];
