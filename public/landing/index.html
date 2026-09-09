@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>SeatGenius — know when to buy your tickets</title>
+    <meta name="description" content="SeatGenius logs resale ticket prices around the clock for the concerts, games and shows you care about, and tells you the cheapest day to buy before it arrives." />
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #0f172a; background: #fff; -webkit-font-smoothing: antialiased; }
+      a { color: #2563eb; text-decoration: none; }
+      a:hover { color: #1d4ed8; }
+      .col { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+      h1, h2, h3, p { margin: 0; }
+      .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 22px; border-radius: 8px; font-size: 16px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .btn-primary:hover { background: #1d4ed8; color: #fff; }
+      .btn-outline { border-color: #cbd5e1; background: #fff; color: #0f172a; }
+      .btn-outline:hover { background: #f8fafc; color: #0f172a; }
+      .pill { display: inline-flex; align-items: center; border: 1px solid; border-radius: 9999px; padding: 2px 10px; font-size: 11px; font-weight: 600; line-height: 16px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+      .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+      nav.top { border-bottom: 1px solid #e2e8f0; }
+      nav.top .col { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .logo { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.025em; color: #0f172a; }
+      .logo b { color: #3b82f6; font-weight: 600; } .logo i { color: #2563eb; font-style: normal; }
+      .links { display: flex; align-items: center; gap: 24px; font-size: 15px; color: #334155; }
+      .links a { color: #334155; }
+      .hero { background: linear-gradient(135deg, #f8fafc 0%, #ffffff 55%, #eff6ff 100%); border-bottom: 1px solid #e2e8f0; }
+      .hero .col { padding: 72px 20px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 56px; align-items: center; }
+      .hero h1 { margin-top: 18px; font-size: clamp(36px, 5vw, 56px); line-height: 1.07; font-weight: 600; letter-spacing: -0.03em; text-wrap: balance; }
+      .hero p.lead { margin-top: 20px; font-size: 19px; line-height: 30px; color: #334155; max-width: 520px; }
+      .cta { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 12px; }
+      .fine { margin-top: 14px; font-size: 13px; color: #64748b; }
+      .example { padding: 24px; border-color: #fde68a; background: #fffbeb; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1); }
+      .example .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: #64748b; }
+      .example .verdict { margin-top: 12px; font-size: 26px; line-height: 32px; font-weight: 600; color: #b45309; }
+      .example p { margin-top: 6px; font-size: 14px; line-height: 21px; color: #334155; }
+      .example svg { display: block; width: 100%; margin-top: 14px; }
+      .example .acts { margin-top: 12px; display: flex; gap: 8px; }
+      .example .acts .btn { flex: 1; height: 40px; font-size: 14px; }
+      .proof { padding: 26px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px 48px; font-size: 14px; color: #475569; border-bottom: 1px solid #f1f5f9; }
+      .proof b { color: #0f172a; font-size: 18px; margin-right: 6px; }
+      section.steps .col { padding: 72px 20px; }
+      h2 { font-size: clamp(26px, 3.4vw, 34px); line-height: 1.18; font-weight: 600; letter-spacing: -0.02em; }
+      .grid3 { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+      .step { display: flex; gap: 16px; align-items: flex-start; }
+      .num { flex: none; width: 32px; height: 32px; border-radius: 9999px; background: #eff6ff; color: #1d4ed8; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; border: 1px solid #bfdbfe; }
+      h3 { font-size: 18px; line-height: 24px; font-weight: 600; }
+      .step p { margin-top: 6px; font-size: 15px; line-height: 24px; color: #475569; }
+      section.doubts { background: #f8fafc; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+      section.doubts .col { padding: 72px 20px; display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 56px; }
+      .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .grid2 .card { padding: 20px; } .grid2 h3 { font-size: 16px; } .grid2 p { margin-top: 8px; font-size: 14px; line-height: 22px; color: #475569; }
+      section.final .col { padding: 88px 20px 96px; text-align: center; }
+      footer { font-size: 13px; color: #94a3b8; margin-top: 40px; }
+      @media (max-width: 900px) {
+        .hero .col, section.doubts .col { grid-template-columns: 1fr; gap: 36px; }
+        .grid3 { grid-template-columns: 1fr; gap: 24px; }
+        .links a:not(.btn) { display: none; }
+      }
+      @media (max-width: 560px) {
+        .grid2 { grid-template-columns: 1fr; }
+        .hero .col { padding: 44px 20px; }
+        .example { padding: 18px; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="top">
+      <div class="col">
+        <a class="logo" href="../">SEAT<b>GENIUS</b><i>.</i></a>
+        <div class="links">
+          <a href="#how">How it works</a>
+          <a href="#doubts">Before you buy</a>
+          <a href="../world-cup/">World Cup 2026</a>
+          <a class="btn btn-primary" style="height: 40px; padding: 0 16px; font-size: 14px;" href="../">Open the app</a>
+        </div>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="col">
+        <div>
+          <span class="pill" id="live-pill" style="border-color: #a7f3d0; background: #ecfdf5; color: #047857;">Tracking prices right now</span>
+          <h1>Stop guessing when to buy tickets.</h1>
+          <p class="lead">SeatGenius logs resale prices for the concerts, games and shows you care about, around the clock, and tells you the cheapest day to buy before it arrives.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="../">Track your first event — free</a>
+            <a class="btn btn-outline" href="../#watch">See what's on watch</a>
+          </div>
+          <p class="fine">No account needed. We link you to SeatGeek, TickPick and Ticketmaster to buy.</p>
+        </div>
+
+        <div class="card example" aria-label="Example verdict">
+          <div class="head">
+            <span style="display: inline-flex; align-items: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+              <span class="pill" style="border-color: #fcd34d; background: #fef3c7; color: #92400e;">Wait</span>
+            </span>
+            <span>Example · arena concert · upper bowl</span>
+          </div>
+          <div class="verdict">Prices are still sliding</div>
+          <p>Upper bowl is down 12% this week and the show hasn't sold out. The low usually lands 3–7 days before a soft-selling weekend show.</p>
+          <svg viewBox="0 0 480 150" aria-hidden="true">
+            <rect x="336" y="10" width="70" height="120" fill="#ecfdf5"></rect>
+            <text x="371" y="8" text-anchor="middle" font-size="9" font-weight="600" fill="#047857">CHEAPEST WINDOW (EST.)</text>
+            <line x1="20" x2="460" y1="60" y2="60" stroke="#94a3b8" stroke-dasharray="4 3"></line>
+            <text x="460" y="55" text-anchor="end" font-size="9" fill="#64748b">typical $190</text>
+            <path d="M20,30 L60,40 L100,36 L140,52 L180,66 L220,74 L260,86 L300,96 L300,130 L20,130 Z" fill="#2563eb" opacity="0.08"></path>
+            <path d="M20,30 L60,40 L100,36 L140,52 L180,66 L220,74 L260,86 L300,96" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M300,96 L336,104 L371,110 L406,106 L440,92 L460,80" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="5 4" stroke-linecap="round"></path>
+            <circle cx="300" cy="96" r="5" fill="#2563eb" stroke="#fff" stroke-width="2"></circle>
+            <rect x="262" y="76" width="42" height="18" rx="4" fill="#0f172a"></rect><text x="283" y="89" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">$141</text>
+            <circle cx="371" cy="110" r="4" fill="#fff" stroke="#047857" stroke-width="2"></circle>
+            <text x="371" y="128" text-anchor="middle" font-size="10" font-weight="600" fill="#047857">~$123</text>
+            <text x="20" y="146" font-size="10" fill="#64748b">30 days ago</text><text x="300" y="146" text-anchor="middle" font-size="10" fill="#64748b">today</text><text x="460" y="146" text-anchor="end" font-size="10" fill="#64748b">show</text>
+          </svg>
+          <div class="acts">
+            <a class="btn btn-primary" href="../">Set a target price</a>
+            <a class="btn btn-outline" href="../">See the live curve</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="col proof" id="proof">
+      <span><b id="stat-events">—</b> events on watch right now</span>
+      <span><b id="stat-tiers">—</b> ticket types priced around the clock</span>
+      <span><b>41</b> venue seating guides</span>
+      <span><b>3</b> marketplaces compared</span>
+    </div>
+
+    <section class="steps" id="how">
+      <div class="col">
+        <h2>Three steps, then we do the watching.</h2>
+        <div class="grid3">
+          <div class="step"><span class="num">1</span><div><h3>Search anything live</h3><p>Concerts, sports, theater, comedy, festivals. Pick the exact ticket type you'd actually buy, from upper deck to floor.</p></div></div>
+          <div class="step"><span class="num">2</span><div><h3>We log the price around the clock</h3><p>Every few hours we record the real get-in price across the resale market and build the curve, so you don't have to keep checking.</p></div></div>
+          <div class="step"><span class="num">3</span><div><h3>Get a buy-or-wait call</h3><p>Demand, days out and the trend line become one plain verdict, plus an estimated cheapest window and a buy-by date.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="doubts" id="doubts">
+      <div class="col">
+        <div>
+          <h2>The questions everyone asks before they buy.</h2>
+          <p style="margin-top: 16px; font-size: 16px; line-height: 26px; color: #475569;">Every event page answers them with data, not a hunch.</p>
+        </div>
+        <div class="grid2">
+          <div class="card"><h3>“Will it get cheaper if I wait?”</h3><p>Soft-selling shows drop 20–40% in the last 48 hours. Sold-out ones climb. We tell you which one yours is.</p></div>
+          <div class="card"><h3>“Which section is actually worth it?”</h3><p>Venue guides with real section numbers, the gated levels, the shade side and the seats to avoid.</p></div>
+          <div class="card"><h3>“Am I paying more than everyone else?”</h3><p>Today's price against the typical price for that seat, and a Deal Score you can read at a glance.</p></div>
+          <div class="card"><h3>“Which site is cheapest?”</h3><p>The same seat compared across marketplaces, fees included, with the no-buyer-fee option flagged.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final">
+      <div class="col">
+        <h2 style="font-size: clamp(28px, 4vw, 40px);">Track one event tonight. See the curve by morning.</h2>
+        <div class="cta" style="justify-content: center;"><a class="btn btn-primary" href="../">Open SeatGenius</a></div>
+        <footer>SeatGenius · Chicago</footer>
+      </div>
+    </section>
+
+    <script>
+      // Live counts from the same API the app uses; the page reads fine without them.
+      (async function () {
+        try {
+          const res = await fetch("https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=tracked");
+          const data = await res.json();
+          const events = Array.isArray(data.events) ? data.events : [];
+          if (!events.length) return;
+          const groups = new Set(events.map(function (e) { return e.group ? "g:" + e.group : String(e.id); }));
+          document.getElementById("stat-events").textContent = String(groups.size);
+          document.getElementById("stat-tiers").textContent = String(events.length);
+          document.getElementById("live-pill").textContent = "Tracking " + groups.size + " events right now";
+        } catch (e) {
+          /* leave the dashes */
+        }
+      })();
+    </script>
+  </body>
+</html>

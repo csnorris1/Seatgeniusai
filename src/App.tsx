@@ -369,6 +369,8 @@ const tkey = (t: { id: string | number; tier?: string | null }) => `${t.id}#${t.
 // A render-stable "now" (the lint rule forbids Date.now() straight in render).
 const useNow = () => useState(() => Date.now())[0];
 
+const QUICK_SEARCHES = ["Bad Bunny", "Bears", "Wicked", "Cubs", "Hamilton", "Bulls", "Sabrina Carpenter"];
+
 const TARGETS_KEY = "sg-targets";
 function readTargets(): Record<string, number> {
   try {
@@ -510,6 +512,8 @@ const localToEvent = (e: LocalEvent): Event => ({
 // Shared by every list on the page: which card is open, what to do on tap, and
 // the detail block to render under the open card on small screens.
 type ListProps = {
+  /** Run a suggested search (no-results state). */
+  onQuickSearch?: (q: string) => void;
   selectedId: string | number | null;
   /** Ticket type of the open event ("" when none). */
   selectedTier: string;
@@ -1010,12 +1014,21 @@ export default function SeatGenius() {
       </div>
     ) : null;
 
-  const listProps: ListProps = { selectedId, selectedTier: selectedEvent?.tier || "", onSelect: handleSelect, inlineDetail };
+  const listProps: ListProps = {
+    selectedId,
+    selectedTier: selectedEvent?.tier || "",
+    onSelect: handleSelect,
+    inlineDetail,
+    onQuickSearch: (q) => {
+      setQuery(q);
+      runSearch(q);
+    },
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900 font-sans">
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               <span className="text-slate-900">SEAT</span>
@@ -1046,7 +1059,8 @@ export default function SeatGenius() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+      <main className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8">
+        <FirstVisitTour />
         <section className="mb-6 max-w-3xl">
           <h2 className="text-2xl text-slate-900 sm:text-3xl">
             When should you buy your next ticket?
@@ -1079,11 +1093,29 @@ export default function SeatGenius() {
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
             </Button>
           </form>
+          {/* Quick searches: one tap on a phone, and a hint of the range on desktop. */}
+          {!searched && (
+            <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+              {QUICK_SEARCHES.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                    setQuery(q);
+                    runSearch(q);
+                  }}
+                  className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         <div className="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,29rem)_minmax(0,1fr)]">
           <div className="min-w-0">
-            <div className="mb-5 flex rounded-lg border border-slate-200 bg-white p-1">
+            <div className="mb-5 hidden rounded-lg border border-slate-200 bg-white p-1 lg:flex">
               {(
                 [
                   ["discover", "Discover"],
@@ -1151,6 +1183,162 @@ export default function SeatGenius() {
           </aside>
         </div>
       </main>
+
+      {/* Phones: a thumb-reach tab bar, swapped for the open event's actions. */}
+      {!isDesktop &&
+        (selectedEvent ? (
+          <MobileActionBar
+            price={readings.length ? readings[readings.length - 1].p : (listings.length ? Math.min(...listings.map((l) => l.price).filter((p) => p > 0)) : selectedEvent.lowest_price ?? null)}
+            href={buyUrl || selectedEvent.url || null}
+            isTracked={isTracked}
+            trackBusy={trackBusy}
+            onToggleTrack={toggleTrack}
+            onClose={resetToEvents}
+          />
+        ) : (
+          <MobileTabBar view={view} onChange={setView} watchCount={new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size} />
+        ))}
+    </div>
+  );
+}
+
+const TOUR_KEY = "sg-tour-seen";
+const TOUR_STEPS = [
+  {
+    title: "Pick the seat you'd really buy",
+    body: "Cheapest-available jumps around. Tracking one ticket type, like “Upper bowl (300s)”, gives a curve you can trust.",
+  },
+  {
+    title: "We log the price around the clock",
+    body: "Every few hours we record the real get-in price. Most curves are readable after two days; the first reading lands within the hour.",
+  },
+  {
+    title: "Then we call it: buy or wait",
+    body: "Demand, days out and the trend become one verdict, with an estimated cheapest window and a buy-by date. Set a target price and Price Watch flags it when it hits.",
+  },
+];
+
+function FirstVisitTour() {
+  const [step, setStep] = useState<number | null>(() => {
+    try {
+      return localStorage.getItem(TOUR_KEY) ? null : 0;
+    } catch {
+      return null;
+    }
+  });
+  if (step == null) return null;
+  const done = () => {
+    try {
+      localStorage.setItem(TOUR_KEY, "1");
+    } catch {
+      /* fine */
+    }
+    setStep(null);
+  };
+  const cur = TOUR_STEPS[step];
+  return (
+    <div className="mb-5 max-w-3xl rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-5" role="dialog" aria-label="Welcome tour">
+      <div className="flex items-start justify-between gap-3">
+        <span className="rounded-full border border-blue-300 bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-800">
+          {step + 1} of {TOUR_STEPS.length}
+        </span>
+        <button type="button" onClick={done} className="text-xs text-slate-500 hover:text-slate-900">
+          Skip
+        </button>
+      </div>
+      <h3 className="mt-2.5 text-lg font-semibold text-slate-900">{cur.title}</h3>
+      <p className="mt-1 text-sm leading-relaxed text-slate-700">{cur.body}</p>
+      <div className="mt-3.5 flex items-center gap-1.5">
+        {TOUR_STEPS.map((_, i) => (
+          <span key={i} className={cn("h-1.5 rounded-full", i === step ? "w-4 bg-blue-600" : "w-1.5 bg-blue-200")} />
+        ))}
+        <span className="flex-1" />
+        <Button size="sm" onClick={() => (step + 1 < TOUR_STEPS.length ? setStep(step + 1) : done())} className="bg-blue-600 text-white hover:bg-blue-700">
+          {step + 1 < TOUR_STEPS.length ? "Next" : "Got it"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MobileTabBar({
+  view,
+  onChange,
+  watchCount,
+}: {
+  view: "discover" | "watch" | "local";
+  onChange: (v: "discover" | "watch" | "local") => void;
+  watchCount: number;
+}) {
+  const tabs = [
+    { key: "discover" as const, label: "Discover", Icon: Search },
+    { key: "watch" as const, label: "Price Watch", Icon: BellRing },
+    { key: "local" as const, label: "Chicago", Icon: MapPin },
+  ];
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-50 flex border-t border-slate-200 bg-white/95 pb-[max(env(safe-area-inset-bottom),8px)] backdrop-blur-md" aria-label="Sections">
+      {tabs.map(({ key, label, Icon }) => {
+        const active = view === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              onChange(key);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            aria-current={active ? "page" : undefined}
+            className={cn("relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium", active ? "text-blue-600" : "text-slate-500")}
+          >
+            <Icon className="h-5 w-5" />
+            {label}
+            {key === "watch" && watchCount > 0 && (
+              <span className="absolute left-1/2 top-1.5 ml-2 min-w-4 rounded-full bg-blue-600 px-1 text-center text-[10px] font-semibold leading-4 text-white">{watchCount}</span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function MobileActionBar({
+  price,
+  href,
+  isTracked,
+  trackBusy,
+  onToggleTrack,
+  onClose,
+}: {
+  price: number | null;
+  href: string | null;
+  isTracked: boolean;
+  trackBusy: boolean;
+  onToggleTrack: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2.5 backdrop-blur-md">
+      <Button type="button" variant="ghost" onClick={onClose} className="h-11 px-3 text-slate-600" aria-label="Close event">
+        <X className="h-5 w-5" />
+      </Button>
+      <Button
+        onClick={onToggleTrack}
+        disabled={trackBusy}
+        variant="outline"
+        className={cn("h-11 flex-1 border-slate-300 bg-white text-slate-900", isTracked && "border-emerald-300 text-emerald-700")}
+      >
+        {trackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : isTracked ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
+        {isTracked ? "Tracking" : "Track price"}
+      </Button>
+      {href && (
+        <Button asChild className="h-11 flex-1 bg-blue-600 text-white hover:bg-blue-700">
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            Buy{price != null ? ` · $${Math.round(price)}` : ""}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </Button>
+      )}
     </div>
   );
 }
@@ -1653,7 +1841,7 @@ function DiscoverView({
         </div>
       )}
 
-      {searching && <LoadingRow label={`Searching events for “${searched}”…`} />}
+      {searching && <SkeletonCards count={3} label={`Searching events for ${searched}`} />}
 
       {!searching && searched && (
         <>
@@ -1679,8 +1867,19 @@ function DiscoverView({
             />
           ))}
           {results.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-white px-5 py-8 text-center text-sm italic text-slate-500">
-              No upcoming events found for that search.
+            <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center">
+              <Search className="mx-auto h-7 w-7 text-slate-400" />
+              <p className="mt-3 text-sm font-medium text-slate-900">No upcoming events for “{searched}”</p>
+              <p className="mt-1 text-sm text-slate-600">
+                We search artists, teams, venues and shows. Check the spelling, try a shorter name, or one of these:
+              </p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {QUICK_SEARCHES.slice(0, 4).map((q) => (
+                  <button key={q} type="button" onClick={() => list.onQuickSearch?.(q)} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:border-slate-400">
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <EventList events={results} {...list} />
@@ -1694,7 +1893,7 @@ function DiscoverView({
             <TrendingUp className="h-5 w-5 text-blue-600" />
             <h3 className="text-lg text-slate-900">Trending nationwide</h3>
           </div>
-          {loadingTrending && <LoadingRow label="Loading trending events…" />}
+          {loadingTrending && <SkeletonCards count={4} label="Loading trending events" />}
           {!loadingTrending && <EventList events={trending} {...list} />}
         </>
       )}
@@ -1872,7 +2071,7 @@ function WatchView({
         </div>
       </div>
 
-      {loading && <LoadingRow label="Loading your watchlist…" />}
+      {loading && <SkeletonCards count={3} label="Loading your watchlist" />}
 
       {!loading && tracked.length === 0 && (
         <div className="rounded-lg border border-slate-200 bg-white px-5 py-10 text-center">
@@ -2776,6 +2975,9 @@ function VenueGuideCard({
 }) {
   const [more, setMore] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
+  const isDesktop = useIsDesktop();
+  const [opened, setOpened] = useState(false);
+  const expanded = isDesktop || opened;
   const guide = guideFor({ venue: event.venue, title: event.title, category: event.category });
   if (!guide) return null;
   const notes = more ? guide.notes : guide.notes.slice(0, 2);
@@ -2789,12 +2991,41 @@ function VenueGuideCard({
   const shown = guide.seating.find((s) => s.tier === (hovered ?? tier)) ?? guide.seating.find((s) => s.tier === tier);
   const priced = guide.seating.map((s) => priceOf(s.tier)).filter((p): p is number => p != null);
   const cheapest = priced.length > 1 ? Math.min(...priced) : null;
+  const zones = guide.seating.map((s) => ({ tier: s.tier, where: s.where, price: priceOf(s.tier), tracked: isTracked(s.tier) }));
+  if (!expanded) {
+    // Phone: one tappable row with a thumbnail; the full card opens on tap.
+    return (
+      <Card className="border-slate-200 bg-white backdrop-blur-sm">
+        <button type="button" onClick={() => setOpened(true)} className="flex w-full items-center gap-3 px-4 py-3 text-left" aria-expanded={false}>
+          {guide.map ? (
+            <div className="w-14 shrink-0 [&_svg]:pointer-events-none">
+              <GuideMap map={guide.map} stage={event.category === "Concerts"} activeTier={tier} onPick={() => undefined} zones={zones} />
+            </div>
+          ) : (
+            <Info className="h-5 w-5 shrink-0 text-blue-600" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-slate-900">Know before you buy</div>
+            <div className="truncate text-xs text-slate-600">{shown ? `${shown.tier}: ${shown.where}` : guide.name}</div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
+      </Card>
+    );
+  }
   return (
     <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-slate-900">
-          <Info className="h-5 w-5 text-blue-600" />
-          Know before you buy
+        <CardTitle className="flex items-center justify-between gap-2 text-slate-900">
+          <span className="flex items-center gap-2">
+            <Info className="h-5 w-5 text-blue-600" />
+            Know before you buy
+          </span>
+          {!isDesktop && (
+            <button type="button" onClick={() => setOpened(false)} className="text-xs font-normal text-slate-500" aria-label="Collapse">
+              Hide
+            </button>
+          )}
         </CardTitle>
         <p className="text-xs text-slate-500">
           {guide.name}
@@ -2810,12 +3041,7 @@ function VenueGuideCard({
               activeTier={tier}
               onPick={onPick}
               onHover={setHovered}
-              zones={guide.seating.map((s) => ({
-                tier: s.tier,
-                where: s.where,
-                price: priceOf(s.tier),
-                tracked: isTracked(s.tier),
-              }))}
+              zones={zones}
             />
             {/* Hover / active detail strip: replaces the browser tooltip and works on touch. */}
             {shown && (
@@ -3185,6 +3411,28 @@ function InsightBlock({ insight, index }: { insight: Insight; index: number }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Placeholder cards while a list loads: the page keeps its shape instead of
+// collapsing to one spinner line.
+function SkeletonCards({ count = 3, label }: { count?: number; label: string }) {
+  return (
+    <div className="grid gap-3" role="status" aria-label={label}>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+          <span className="mt-0.5 h-9 w-9 shrink-0 animate-pulse rounded-lg bg-slate-100" />
+          <div className="min-w-0 flex-1">
+            <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
+            <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-slate-100" />
+            <div className="mt-3 flex gap-2">
+              <span className="h-5 w-24 animate-pulse rounded-full bg-slate-100" />
+              <span className="h-5 w-16 animate-pulse rounded-full bg-slate-100" />
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
