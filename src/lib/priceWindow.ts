@@ -51,7 +51,13 @@ function patternFor(category: string | null | undefined, title: string, highDema
     return { startDays: 3, endDays: 0, buyByDays: 0.5, drop: [0.1, 0.19], basis: "NFL resale sheds ~19% over the final 20 days and bottoms on game day." };
   if (/\bnba\b|\bnhl\b|bulls|blackhawks|lakers|celtics|knicks|warriors|heat|bucks|suns|nets|clippers|mavericks|nuggets|76ers|rangers|bruins|maple leafs|penguins|red wings|avalanche|lightning|panthers|oilers|kings|flyers|devils|islanders|capitals|hurricanes|predators|stars|wild|blues|jets|kraken|golden knights|sharks|ducks|canucks|flames|senators|canadiens|sabres|blue jackets|utah/.test(t) && cat === "sports")
     return { startDays: 3, endDays: 1, buyByDays: 1, drop: [0.08, 0.18], basis: "NBA and NHL resale holds until ~60 days out, then bottoms 1–3 days before." };
-  if (cat === "sports") return { startDays: 7, endDays: 1, buyByDays: 1, drop: [0.15, 0.3], basis: "Ordinary MLB games fall ~25% in the final week; giveaway nights and rivalries don't." };
+  if (cat === "sports" && /presidents cup|ryder cup|solheim cup/.test(t))
+    return { startDays: 7, endDays: 2, buyByDays: 2, drop: [0.05, 0.15], basis: "Team golf events sell out at face and Sat/Sun carry the demand; no published resale curve — weekday rounds soften a little, finals rarely do." };
+  if (cat === "sports" && /\bgolf\b|\bpga\b|\blpga\b|masters tournament|open championship|players championship|pga tour/.test(t))
+    return { startDays: 7, endDays: 1, buyByDays: 1, drop: [0.1, 0.25], basis: "Golf grounds passes are cheapest for practice rounds and soften inside the final week; Saturday and Sunday hold." };
+  if (cat === "sports" && /\bmlb\b|baseball|cubs|white sox|yankees|red sox|dodgers|mets|braves|phillies|astros|padres|giants|cardinals|brewers|orioles|rays|blue jays|mariners|rangers|twins|tigers|guardians|royals|angels|athletics|pirates|reds|marlins|nationals|rockies|diamondbacks/.test(t))
+    return { startDays: 7, endDays: 1, buyByDays: 1, drop: [0.15, 0.3], basis: "Ordinary MLB games fall ~17–25% in the final week (more for high-demand games); giveaway nights and rivalries don't." };
+  if (cat === "sports") return { startDays: 7, endDays: 1, buyByDays: 1, drop: [0.1, 0.25], basis: "Most sports resale keeps falling into the final days; 80–89% of seller reprices are cuts." };
   if (highDemand) return { startDays: 0, endDays: 0, buyByDays: 0, drop: [0, 0], basis: "High-demand events rarely get cheaper as the date nears." };
   return { startDays: 7, endDays: 2, buyByDays: 2, drop: [0.1, 0.2], basis: "Most resale curves bottom a week to two days out." };
 }
