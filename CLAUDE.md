@@ -51,7 +51,8 @@ SeatGenius answers one question for **any live event** (concerts, sports, theate
 ## Product Roadmap
 
 - Current: all-event search (SeatGeek discovery), Price Watch tracking + automatic resale price logging (Claude web search → DynamoDB), buy-now-or-wait verdicts from trend + demand + days-out patterns, AI buy-timing analysis
-- Next: Apply to affiliate programs (StubHub, Vivid Seats) for live resale data feeds (replaces web-search pricing)
+- Next (from `docs/notes/2026-09-10-price-pattern-research.md`): (a) "still selling on Ticketmaster / primary sold out" line per event from Discovery `dates.status.code`; (b) weeknight-vs-weekend hint on multi-date series and an MLB high-demand/ordinary split in `priceWindow.ts`; (c) Cory emails Ticketmaster (Inventory Status API — resale price ranges + availability), StubHub affiliates and TickPick Partners; (d) move the sweep's Claude fallback from web search to Haiku + web fetch of the known marketplace URL (~7× cheaper)
+- Watchlist policy: Cory tracks only events he actually intends to attend (motivation, not cost — a sweep call is per 5 events). Don't seed the list for coverage.
 - Goal: Own enough price-curve history per event category to predict the cheapest buying window before it happens
 - Done 2026-09-09: target-price alerts (browser notification with the tab open; email via the sweep + SES once `ALERT_FROM` is set). Future: alert on the *predicted* bottom, not just a user target; push with the tab closed (service worker + VAPID)
 

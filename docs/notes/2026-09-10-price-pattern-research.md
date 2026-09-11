@@ -5,6 +5,41 @@ Three parallel research passes on the night before the Eric Clapton show
 curves, which data sources could replace or supplement Claude web search, and
 what the Clapton case itself looked like. Plain English; numbers with sources.
 
+## TL;DR (plain English) and the plan
+
+What the evidence says:
+- **Concerts bottom at the very end.** Day-before / day-of buys run 27–33%
+  below the event's average; the price *peak* is 2–4 weeks out. The app had
+  this backwards — fixed 2026-09-10.
+- **Festivals are the exception.** Multi-day passes bottom ~13 days out. Own
+  rule now.
+- **Most reprices are cuts** (80–89%), so "wait" is the right default unless
+  something says the show is genuinely selling out.
+- **Popular ≠ sold out.** Clapton scored 0.83 popularity with thousands of
+  seats open. Concerts now need ≥0.85 to trigger "buy now, it's hot".
+- **Supply is the missing signal.** Unsold-seat depth predicts direction better
+  than price alone. Ticketmaster's status flag / Inventory Status feed is the
+  closest free source.
+- **Weeknight shows run 15–20% cheaper** than weekend ones (compare dates of
+  one tour, don't use it to predict drops).
+- **Sports keep falling to game time**; the last ~90 minutes can cut another
+  40–70%. High-demand baseball games fall *more* in the final week, not less.
+
+The plan, in order:
+1. Done: concert + festival timing rules, stricter concert high-demand bar.
+2. Next code change: a "still selling on Ticketmaster / primary sold out"
+   line per event from `dates.status.code` (key works now).
+3. Then: weeknight-vs-weekend hint on multi-date series; split the MLB rule
+   into high-demand (−25% final week) and ordinary (−17%).
+4. Cory sends three emails: Ticketmaster Inventory Status (draft in §4),
+   affiliates@stubhub.com, TickPick Partners. Real seat counts + cheaper prices.
+5. Keep logging to the end of every tracked event — nobody has published the
+   concert day-of curve; that's the moat.
+
+Watchlist policy (Cory, 2026-09-10): track only events he actually wants to
+attend. Cost is per sweep call (5 events share one), so fewer events barely
+saves money; the point is motivation.
+
 ## 0. Why the Price Watch data was stale
 
 Nothing was written to `seatgenius-price-history` between 06:09 UTC Sep 10 and
