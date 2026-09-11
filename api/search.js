@@ -1105,11 +1105,16 @@ Keep it concise and conversational. Bold the key insights.`;
         const last = e.last_at ? new Date(e.last_at).getTime() : NaN;
         return isNaN(last) ? Infinity : (now.getTime() - last) / 3600000 / intervalOf(e);
       };
-      // Manual runs can narrow to one group (`group=`) and cap the count
-      // (`limit=`), e.g. to seed a newly tracked tournament on its own.
+      // Manual runs can narrow to one group (`group=`) or one event
+      // (`event_id=`) and cap the count (`limit=`), e.g. to seed a newly
+      // tracked tournament on its own or watch one show hourly on its day.
       const limit = Math.min(Math.max(parseInt(params.limit, 10) || BATCH * MAX_BATCHES, 1), BATCH * MAX_BATCHES);
       const due = upcoming
         .filter(e => !params.group || e.group === params.group)
+        // `event_id=` prices one event only (every tracked ticket type of it) —
+        // for a day-of watch on a single show without spending a batch on the
+        // rest of the list.
+        .filter(e => !params.event_id || String(e.id) === String(params.event_id))
         .filter(isDue)
         .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)) || String(a.id).localeCompare(String(b.id)))
         .slice(0, limit);

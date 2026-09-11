@@ -67,3 +67,31 @@ jobs:
           buy_url = data.get('buy_url')
           print(f'Listings: {len(listings)}, Buy URL: {buy_url}')
           "
+
+      - name: Check the price sweep is still writing
+        run: |
+          # The hourly sweep stalled silently for ~19h on 2026-09-10 (Anthropic
+          # monthly usage cap). Fail if no tracked event has a reading in 26h,
+          # and surface the last sweep's errors either way.
+          curl -s "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=tracked" | python3 -c "
+          import sys, json, datetime
+          data = json.load(sys.stdin)
+          evs = data.get('events') or data.get('tracked') or []
+          stamps = [e['last_at'] for e in evs if e.get('last_at')]
+          if not evs:
+              print('::warning::No tracked events'); sys.exit(0)
+          if not stamps:
+              print('::error::Tracked events exist but none has a reading'); sys.exit(1)
+          latest = max(stamps)
+          age_h = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(latest.replace('Z', '+00:00'))).total_seconds() / 3600
+          print(f'Newest reading: {latest} ({age_h:.1f}h ago) across {len(evs)} entries')
+          if age_h > 26:
+              print(f'::error::Price sweep has written nothing for {age_h:.0f}h — check action=sweep_status (usage cap? Lambda error?)'); sys.exit(1)
+          "
+          curl -s "https://vebhfm3r55.execute-api.us-east-2.amazonaws.com/search?action=sweep_status" | python3 -c "
+          import sys, json
+          s = json.load(sys.stdin)
+          print('Last sweep:', s.get('at'), 'due', s.get('due'), 'logged', s.get('logged'), s.get('note') or '')
+          for err in s.get('errors') or []:
+              print(f'::warning::Last sweep error: {err}')
+          "

@@ -6,8 +6,14 @@ import { trendPct, type Reading } from "@/lib/buyTiming";
 // a model fitted to this event — the UI must say so ("est.").
 //
 // Sources for the category patterns (see src/lib/venueNotes.ts sources):
-//   concerts   dip 12–20 days out, soft sellers drop 20–40% in the last 48h;
-//              sold-out / high-demand shows never get cheaper.
+//   concerts   single shows PEAK 2–4 weeks out and bottom the day before /
+//              day of (27–33% below the event's average; FinanceBuzz 2022,
+//              22k tickets; seatdata.io 307k sales). Festival passes are the
+//              opposite: cheapest ~13 days out, only 17% off day-of.
+//              Genuinely sold-out shows never get cheaper — and on our data
+//              popularity alone overcalls that (Clapton 0.83 had thousands of
+//              seats open the night before), so concerts need ≥0.85.
+//              See docs/notes/2026-09-10-price-pattern-research.md.
 //   MLB        ordinary games fall ~25% in the final week, steepest last 5–7d.
 //   NBA / NHL  hold until ~60 days out, cheapest 1–3 days before.
 //   NFL        ~19% off over the final 20 days, ~13% under average on game day.
@@ -35,8 +41,10 @@ function patternFor(category: string | null | undefined, title: string, highDema
   const t = title.toLowerCase();
   const cat = (category || "").toLowerCase();
   if (cat === "concerts") {
-    if (daysOut > 20) return { startDays: 20, endDays: 12, buyByDays: 12, drop: [0.08, 0.2], basis: "Arena shows usually dip 12–20 days out, then firm up." };
-    return { startDays: 2, endDays: 0.25, buyByDays: 0.5, drop: [0.2, 0.4], basis: "Soft-selling shows drop 20–40% in the last 48 hours." };
+    if (/\bfest(ival)?\b|\b(weekend|[1-4]-day|\d-day|ga) pass\b/.test(t))
+      return { startDays: 16, endDays: 11, buyByDays: 11, drop: [0.2, 0.3], basis: "Festival passes bottom about 13 days out, then firm up into the weekend." };
+    if (daysOut > 28) return { startDays: 1, endDays: 0.25, buyByDays: 0.5, drop: [0.2, 0.33], basis: "Single shows peak 2–4 weeks out and bottom the day before or day of (27–33% below average)." };
+    return { startDays: 1, endDays: 0.25, buyByDays: 0.5, drop: [0.2, 0.4], basis: "Soft-selling shows drop 20–40% in the last 48 hours; most reprices are cuts." };
   }
   if (cat === "theater" || cat === "arts" || cat === "comedy") return { startDays: 7, endDays: 1, buyByDays: 1, drop: [0.1, 0.25], basis: "Weekday performances soften inside the final week." };
   if (/\bnfl\b|bears|packers|cowboys|eagles|chiefs|49ers|steelers|ravens|bills|dolphins|jets|giants|patriots|lions|vikings|saints|falcons|panthers|buccaneers|rams|chargers|raiders|broncos|seahawks|cardinals|texans|colts|jaguars|titans|browns|bengals|commanders/.test(t) && cat === "sports" && !/mlb|baseball/.test(t))
@@ -64,7 +72,10 @@ export function cheapestWindow(opts: {
   const daysOut = (eventMs - nowMs) / 864e5;
   if (daysOut <= 0) return null;
 
-  const highDemand = popularity != null && popularity >= 0.75;
+  // Popularity is our only demand proxy until we have primary-market sellout
+  // data; concerts need a higher bar (see header note).
+  const isConcert = (category || "").toLowerCase() === "concerts";
+  const highDemand = popularity != null && popularity >= (isConcert ? 0.85 : 0.75);
   const trend = trendPct(readings);
   const rising = trend != null && trend > 3;
   const last = readings.length ? readings[readings.length - 1].p : null;

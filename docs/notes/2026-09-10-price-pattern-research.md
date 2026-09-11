@@ -73,6 +73,19 @@ Status; email StubHub affiliates and apply to TickPick Partners the same day
 (both take weeks); add Wikipedia pageviews per performer; email the arXiv
 authors for their snapshot set.
 
+## 2b. Done tonight / still pending
+
+- `src/lib/priceWindow.ts`: concert pattern rewritten to the data above
+  (single shows bottom day-before/day-of; festival passes ~13 days out;
+  concerts need popularity ≥0.85 to count as "high demand"). Shipped.
+- `api/search.js`: `log_tracked&event_id=<id>` prices one show only (all its
+  ticket types). **Not deployed yet** — AWS SSO had expired; deploy the Lambda
+  next session.
+- `site-monitor.yml`: fails when no tracked event has a reading in 26h.
+- Ticketmaster Discovery key **works now** (200). `priceRanges` is null for
+  Live Nation arena shows; status codes and public-sale end times come back
+  for every event. Worth polling `dates.status.code` as a sellout/offsale flag.
+
 ## 3. The Clapton case (a worked example)
 
 - Chicago was **not sold out** the night before: ~1,300–4,300 resale listings
