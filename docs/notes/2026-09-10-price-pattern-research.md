@@ -86,6 +86,59 @@ authors for their snapshot set.
   Live Nation arena shows; status codes and public-sale end times come back
   for every event. Worth polling `dates.status.code` as a sellout/offsale flag.
 
+## 4. Making the price sweep cheaper and better (second pass)
+
+**Costs, from the Anthropic pricing page.** Web *search* is $10 per 1,000
+searches on top of tokens; web *fetch* of a known URL is free apart from
+tokens. Haiku 4.5 supports both (basic variants; cap size with
+`max_content_tokens`, and the URL must appear in the message). Rough cost per
+1,000 event reads: today's Sonnet + web search ≈ $36; Haiku + web fetch of a
+known page ≈ $5; plain `fetch()` + parse in the Lambda ≈ $0.
+
+**TickPick pages carry the get-in as schema.org data.** The event page returns
+200 to a plain request and embeds a JSON-LD `AggregateOffer` with `lowPrice`
+(69 tonight), `highPrice` (2,661) and `validFrom` (the render time). No
+average or listing count. Caveats: TickPick's terms prohibit automated
+collection and its robots.txt disallows `/buy-*-tickets/` (the old URL shape;
+the current shape is a grey area). The clean route is the TickPick Partners
+program, which advertises an API to approved affiliates. Treat the JSON-LD
+read as a stopgap only if Cory accepts that risk. Vivid Seats, SeatGeek and
+StubHub pages block plain requests; don't try to get around that.
+
+**Ticketmaster.** Discovery `priceRanges` were removed on 2025-03-11, which
+is why every arena show returns null. The replacement is the **Inventory
+Status API**: availability status plus price ranges for primary *and resale*
+inventory, hourly. Access by emailing devportalinquiry@ticketmaster.com. Draft:
+
+> Subject: Inventory Status API access — SeatGenius
+> Hi — I run SeatGenius (seatgenius.net, GitHub Pages app), a buy-timing tool
+> that tells fans whether to buy a ticket now or wait. We already use the
+> Discovery API (key on account cory@roininc.net) for event lookup and link
+> every event to its Ticketmaster page. I'd like access to the Inventory
+> Status API to show availability status and primary/resale price ranges for
+> the events users track (~40 today, checked at most hourly). Happy to
+> describe the integration or sign whatever is needed. Thanks, Cory Norris
+
+**Aggregators.** TicketsData (10 marketplaces, listing counts, $499/mo) is the
+best quality and too expensive today. SeatData.io sells historical *sales*
+(50M since 2021, "as low as $0.005 per request") — the right source for
+fitting category curves later, not for the hourly sweep. Brave/SerpAPI
+snippets are cached and stale; skip.
+
+**The free StubHub sample is masked.** Every `minPrice`, `price` and
+`ticketsRemaining` in the rebrowser sample is `[PREMIUM]`, so it gives no
+curves. Their research tier ("free access to a much larger slice" for
+non-commercial use, rebrowser.net/free-datasets-for-research) might; Cory
+would have to apply. The arXiv 2507.23767 author (Jonathan R. Landers, no
+affiliation listed) has not published the SeatGeek snapshots; email via arXiv.
+
+**Recommended pipeline change, cheapest first** (40 events every 2–6h ≈ 7k
+reads/month): (1) read TickPick's JSON-LD or, better, the Partners API for
+get-in; (2) move the Claude fallback from web search to Haiku + web fetch of
+the known marketplace URL (~$10–15/month instead of ~$260 at full cadence);
+(3) send the Ticketmaster email today, apply to TickPick Partners and email
+affiliates@stubhub.com the same day — all free, all slow.
+
 ## 3. The Clapton case (a worked example)
 
 - Chicago was **not sold out** the night before: ~1,300–4,300 resale listings
