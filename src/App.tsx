@@ -2380,9 +2380,11 @@ function EventCard({
               className={cn(
                 "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
                 v.badge,
+                quick.confidence === "pattern" && "border-dashed",
               )}
+              title={quick.basedOn}
             >
-              {v.label}
+              {quick.confidence === "pattern" && quick.action !== "track" ? `Likely ${v.label}` : v.label}
             </span>
           </div>
 
@@ -2789,6 +2791,9 @@ function VerdictHero({
             </div>
             <h3 className={cn("mt-3 text-2xl font-semibold sm:text-3xl", s.title)}>{verdict.title}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">{verdict.detail}</p>
+            <p className={cn("mt-1 max-w-2xl text-xs", verdict.confidence === "data" ? "text-slate-500" : "text-amber-700")}>
+              {verdict.basedOn}
+            </p>
             {win && !win.now && (
               <p className="mt-2 max-w-2xl text-sm text-slate-700">
                 Cheapest window <span className="font-medium text-slate-900">{formatWindow(win)}</span>, buy by{" "}

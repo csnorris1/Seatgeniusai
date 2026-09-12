@@ -596,6 +596,27 @@ exports.handler = async (event) => {
       if (!ANTHROPIC_API_KEY) {
         return respond(500, { error: 'AI analysis is not configured.' });
       }
+      // Global daily budget: this action is public and each call spends up to
+      // three web searches, so cap it (ANALYZE_DAILY_CAP, default 40) with an
+      // atomic counter row (PK 'BUDGET', SK 'analyze#YYYY-MM-DD').
+      try {
+        const t = priceHistoryTools();
+        const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+        const cap = Math.max(1, parseInt(process.env.ANALYZE_DAILY_CAP, 10) || 40);
+        await t.ddb.send(new UpdateItemCommand({
+          TableName: t.TABLE,
+          Key: t.marshall({ event_id: 'BUDGET', date: `analyze#${new Date().toISOString().slice(0, 10)}` }),
+          UpdateExpression: 'ADD #n :one',
+          ConditionExpression: 'attribute_not_exists(#n) OR #n < :cap',
+          ExpressionAttributeNames: { '#n': 'n' },
+          ExpressionAttributeValues: t.marshall({ ':one': 1, ':cap': cap }),
+        }));
+      } catch (err) {
+        if (err && err.name === 'ConditionalCheckFailedException') {
+          return respond(429, { error: "Today's AI analysis budget is used up — try again tomorrow." });
+        }
+        // Counter unavailable: let the call through rather than break the feature.
+      }
 
       // Game data arrives as query params (GET) — the API Gateway route only
       // forwards GET to this Lambda.
@@ -864,51 +885,6 @@ Keep it concise and conversational. Bold the key insights.`;
       });
     }
 
-    // TEMPORARY demo seeding. Writes 5 days of synthetic 6-hourly price
-    // readings for every tracked event (or one via event_id) so the price
-    // charts and trend verdicts can be demoed before the real hourly sweep has
-    // an Anthropic key. Every row carries demo:true so real data can later be
-    // separated/purged. Timestamps are rounded to 6h boundaries, so re-running
-    // overwrites the same rows instead of duplicating them. Curve shape is
-    // picked deterministically per event id (falling / rising / dip-recover).
-    if (action === 'seed_demo') {
-      const t = priceHistoryTools();
-      const list = await t.getTracked();
-      const targets = event_id ? list.filter(e => String(e.id) === String(event_id)) : list;
-      if (targets.length === 0) return respond(400, { error: 'No tracked events to seed.' });
-
-      const SIX_H = 6 * 3600e3;
-      const nowMs = Date.now();
-      let written = 0;
-      for (const e of targets) {
-        const seedNum = [...String(e.id)].reduce((a, c) => a + c.charCodeAt(0), 0);
-        const shape = seedNum % 3;
-        const base = 60 + (seedNum % 200);
-        for (let i = 20; i >= 0; i--) {
-          const ts = new Date(Math.floor((nowMs - i * SIX_H) / SIX_H) * SIX_H).toISOString();
-          const prog = (20 - i) / 20;
-          let f;
-          if (shape === 0) f = 1.25 - 0.35 * prog;               // falling into the event
-          else if (shape === 1) f = 0.95 + 0.3 * prog;           // climbing (hot demand)
-          else f = 1.1 - 0.25 * Math.sin(prog * Math.PI);        // dip, then recover
-          const wiggle = 1 + 0.04 * Math.sin(i * 2.1 + seedNum);
-          const item = {
-            event_id: String(e.id),
-            date: ts,
-            p: Math.round(base * f * wiggle),
-            avg: Math.round(base * 1.35),
-            title: e.title,
-            demo: true,
-          };
-          try {
-            await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item) }));
-            written++;
-          } catch { /* keep seeding the rest */ }
-        }
-      }
-      return respond(200, { seeded: written, events: targets.length, note: 'DEMO data (demo:true) — separate from real readings before launch.' });
-    }
-
     // World Cup live refresh. Results + standings come from openfootball's
     // public-domain 2026 JSON (no API key, complete, accurate) so the bracket
     // reflects every real group result. The Anthropic key is used only for what
@@ -982,9 +958,11 @@ Keep it concise and conversational. Bold the key insights.`;
         // openfootball unavailable — return prices only; bracket keeps its data.
       }
 
-      // 2) Resale get-in prices via Claude (the one thing openfootball can't give).
+      // 2) Resale get-in prices used to come from a Claude web search here.
+      // The 2026 tournament is over and the action is public, so that spend
+      // is gone; the archived page shows the bracket without live prices.
       let getin = [], note = '';
-      const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+      const ANTHROPIC_API_KEY = null;
       if (ANTHROPIC_API_KEY && wantList !== 'none') {
         const prompt = `Search the web for current 2026 FIFA World Cup resale ticket prices and how they are trending. Today is ${new Date().toDateString()}. Return ONLY a JSON object — no markdown, no prose — with this shape: {"getin":[{"id":76,"p":1450,"avg":2200,"chg":-8}],"note":"one short sentence on notable price movement"}. In "getin", for ONLY these matches by id (${wantList}): "p" = current cheapest all-in resale price (get-in) in whole dollars; "avg" = the typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change in the price (a number, negative if prices are dropping). Use resale price trackers (Vivid Seats, SeatPick, TickPick, StubHub). For undecided knockout slots, price the match-number slot anyway. Omit any id you can't confirm rather than guessing.`;
         try {
@@ -1027,14 +1005,24 @@ Keep it concise and conversational. Bold the key insights.`;
     // (rate(1 hour)) still invokes action=wc_log — originally the World Cup
     // logger. The 2026 World Cup is over, so this action is now the Price
     // Watch sweep: each tracked event gets priced on a cadence tied to how
-    // close it is (hourly inside 48h, every 3h inside a week, every 6h inside
-    // a month, daily at 12:00 UTC beyond that), via batched Claude
-    // web-search calls (8 events per call, at most 2 calls per sweep, run in
-    // parallel), with a timestamped reading per event written to DynamoDB.
-    // `action=log_tracked` triggers the same sweep manually; force=1 skips
-    // the cadence gate (used for seeding/testing). Use the Lambda Function
-    // URL for manual runs — a two-batch sweep can exceed the Gateway's 29s.
+    // close it is (see intervalOf below — low-burn mode: 2h inside 48h, 6h
+    // inside a week, daily beyond), via batched Claude web-search calls
+    // (5 events per call, MAX_BATCHES calls per sweep), with a timestamped
+    // reading per event written to DynamoDB. `action=log_tracked&token=`
+    // triggers the same sweep manually over HTTP; force=1 skips the cadence
+    // gate. Use the Lambda Function URL for manual runs — a multi-batch
+    // sweep can exceed the Gateway's 29s.
     if (action === 'wc_log' || action === 'log_tracked') {
+      // The hourly EventBridge rule invokes the function directly (a plain
+      // event with no HTTP context). Anyone else arrives over HTTP and must
+      // carry LOG_TOKEN — each sweep is a paid Claude web-search call, and
+      // force=1 would let a stranger run one every second.
+      const viaHttp = Boolean(event.requestContext || event.httpMethod);
+      if (viaHttp) {
+        const LOG_TOKEN = process.env.LOG_TOKEN;
+        if (!LOG_TOKEN) return respond(403, { error: 'Manual sweeps are off until LOG_TOKEN is set on the Lambda.' });
+        if (params.token !== LOG_TOKEN) return respond(403, { error: 'Forbidden' });
+      }
       const t = priceHistoryTools();
       const now = new Date();
       const nowISO = now.toISOString();
@@ -1064,7 +1052,6 @@ Keep it concise and conversational. Bold the key insights.`;
 
       // 2) Which events are due for a reading this hour? Each event has a
       // cadence interval (hours) tied to how close it is; deep watch is 2h.
-      const h = now.getUTCHours();
       // Low-burn mode (2026-09-09): the API balance ran dry at ~$12/day, so
       // deep watch (per-marketplace quotes, every 2h) is paused until the US
       // Open is over and everything prices on a slower clock: 2-hourly inside
@@ -1082,10 +1069,16 @@ Keep it concise and conversational. Bold the key insights.`;
         if (hrsOut <= 7 * 24) return 6;
         return 24;
       };
+      // Due = its interval has elapsed since it was last attempted (priced or
+      // not), so an event that lost the batch cut-off this hour is tried next
+      // hour instead of waiting a full cycle, and a failing one retries at
+      // its own cadence rather than every hour. Never tried = due now.
       const isDue = (e) => {
         if (params.force === '1') return true;
-        const iv = intervalOf(e);
-        return iv === 24 ? h === 12 : h % iv === 0;
+        const ref = [e.tried_at, e.last_at].filter(Boolean).sort().pop();
+        const refMs = ref ? new Date(ref).getTime() : NaN;
+        if (isNaN(refMs)) return true;
+        return (now.getTime() - refMs) / 3600000 >= intervalOf(e) - 0.5;
       };
       // Cost cap: at most three Claude calls per sweep — 5 events per call
       // (8 distinct sessions on 8 searches came back empty), deep-watch
@@ -1265,7 +1258,8 @@ Keep it concise and conversational. Bold the key insights.`;
           if (matchup && matchup !== e.matchup) { e.matchup = matchup; e.matchup_at = nowISO; }
         } catch { noprice++; }
       }
-      if (written) await t.putTracked(upcoming);
+      for (const e of due) e.tried_at = nowISO;
+      await t.putTracked(upcoming);
       // 5) Email alerts: anyone whose target this sweep reached gets a mail.
       let alerts = null;
       if (written) {

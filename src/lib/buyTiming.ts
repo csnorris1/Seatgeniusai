@@ -23,12 +23,20 @@ export type SessionContext = {
 
 export type FactorTone = "good" | "neutral" | "bad";
 
+/** How much of the verdict rests on this event's own logged prices. */
+export type Confidence = "pattern" | "early" | "data";
+
 export type BuyVerdict = {
   action: "buy" | "soon" | "wait" | "track";
   title: string;
   detail: string;
   factors: { label: string; tone: FactorTone }[];
+  confidence: Confidence;
+  /** One plain sentence saying what the verdict is based on. */
+  basedOn: string;
 };
+
+type CoreVerdict = Omit<BuyVerdict, "confidence" | "basedOn">;
 
 // Percent change between the last reading and the reading closest to 7 days
 // before it (or the first reading when the log is shorter than a week).
@@ -73,6 +81,42 @@ export function buyTiming(opts: {
   /** Present only for a session of a multi-session event. */
   session?: SessionContext | null;
 }): BuyVerdict {
+  const core = verdictCore(opts);
+  const readings = opts.readings ?? [];
+  const n = readings.length;
+  // A verdict with no readings is a category rule of thumb; say so, so it is
+  // never mistaken for something this event's prices proved.
+  if (n === 0) {
+    return {
+      ...core,
+      confidence: "pattern",
+      basedOn: "Based on the typical pattern for this kind of event, not this event's own prices yet. Track it for a verdict from real readings.",
+    };
+  }
+  if (n < 3) {
+    return {
+      ...core,
+      confidence: "early",
+      basedOn: `Based on ${n} logged reading${n === 1 ? "" : "s"} so far — the verdict firms up after three.`,
+    };
+  }
+  const spanDays = Math.max(
+    1,
+    Math.round((new Date(readings[n - 1].t).getTime() - new Date(readings[0].t).getTime()) / 864e5),
+  );
+  return {
+    ...core,
+    confidence: "data",
+    basedOn: `Based on ${n} logged readings over ${spanDays} day${spanDays === 1 ? "" : "s"}.`,
+  };
+}
+
+function verdictCore(opts: {
+  datetime_local?: string;
+  popularity?: number | null;
+  readings?: Reading[];
+  session?: SessionContext | null;
+}): CoreVerdict {
   const { datetime_local, popularity, readings = [], session } = opts;
 
   const eventMs = datetime_local ? new Date(datetime_local).getTime() : NaN;
