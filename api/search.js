@@ -1216,6 +1216,10 @@ Keep it concise and conversational. Bold the key insights.`;
         }
       });
       if (errors.length === batches.length) {
+        // Still count this as an attempt, or the same unpriceable events
+        // would come back every hour and burn a call each time.
+        for (const e of due) e.tried_at = nowISO;
+        try { await t.putTracked(upcoming); } catch { /* status below still records the failure */ }
         await saveStatus({ due: due.length, logged: 0, batches: batchStatus, errors });
         return respond(502, { error: `Price lookup failed: ${errors.join('; ')}` });
       }
