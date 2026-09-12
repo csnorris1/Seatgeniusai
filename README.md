@@ -1,16 +1,16 @@
-# React + Vite
+# SeatGenius
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+When is the best time to buy a ticket? Search any live event, track the ones you
+plan to attend, and the site logs resale prices automatically and turns the
+curve into a buy-now-or-wait verdict.
 
-Currently, two official plugins are available:
+- Live site: https://csnorris1.github.io/Seatgeniusai/
+- How it works and how to work on it: [CLAUDE.md](CLAUDE.md)
+- Session notes and gotchas: [docs/notes/](docs/notes/README.md)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```
+npm run dev        # local dev server
+npm run lint
+npm run typecheck
+npm run build
+```

@@ -135,7 +135,6 @@ export function PriceChart({
   };
 
   const hp = hover != null ? model.pts[hover] : null;
-  const fmtDay = (t: string) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const fmtFull = (t: string) =>
     new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -255,13 +254,13 @@ export function PriceChart({
           const anchor = i === 0 ? "start" : i === model.pts.length - 1 && !model.forecast ? "end" : "middle";
           return (
             <text key={i} x={p.x} y={H - 8} textAnchor={anchor} fontSize="10" fill="#64748b">
-              {i === model.pts.length - 1 ? "latest" : fmtDay(p.r.t)}
+              {i === model.pts.length - 1 ? "latest" : formatDay(new Date(p.r.t))}
             </text>
           );
         })}
         {model.forecast && eventAt && (
           <text x={W - PAD.right} y={H - 8} textAnchor="end" fontSize="10" fill="#64748b">
-            {model.t1 >= new Date(eventAt).getTime() - 3600e3 ? `${fmtDay(eventAt)} · event` : fmtDay(new Date(model.t1).toISOString())}
+            {model.t1 >= new Date(eventAt).getTime() - 3600e3 ? `${formatDay(new Date(eventAt))} · event` : formatDay(new Date(model.t1))}
           </text>
         )}
 

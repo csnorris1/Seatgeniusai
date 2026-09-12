@@ -242,6 +242,12 @@ const demandClasses: Record<string, string> = {
   Low: "border-slate-300 bg-slate-100 text-slate-700",
 };
 
+// Cheapest priced listing, or null when none has a price (never Infinity).
+function lowestListing(listings: { price: number }[]): number | null {
+  const prices = listings.map((l) => l.price).filter((p) => Number.isFinite(p) && p > 0);
+  return prices.length ? Math.min(...prices) : null;
+}
+
 function dealScore(event: Event): number | null {
   const { lowest_price, average_price } = event;
   if (!lowest_price || !average_price || average_price === 0) return null;
@@ -292,12 +298,12 @@ function parseAnalysis(text: string): Insight[] | null {
     // Match: optional **, number, period, space, title, optional trailing **,
     // then either end of line OR " — body" on same line
     const header = firstLine.match(
-      /^\s*(?:\*\*)?(\d+)\.\s+(.+?)(?:\*\*)?(?:\s*[—:\-–]\s*(.+))?\s*$/,
+      /^\s*(?:\*\*)?(\d+)\.\s+(.+?)(?:\*\*)?(?:\s*(?:[—–:]|\s-)\s*(.+))?\s*$/,
     );
     if (!header) continue;
 
     const title = header[2].replace(/\*\*/g, "").trim();
-    const inlineBody = header[3] ? header[3].trim() : "";
+    const inlineBody = header[3] ? header[3].replace(/\*\*/g, "").trim() : "";
     const body = [inlineBody, rest.trim()].filter(Boolean).join("\n\n").trim();
     insights.push({ number: header[1], title, body });
   }
@@ -627,7 +633,7 @@ export default function SeatGenius() {
           if (e) openFromAlert(e);
         }
       })
-      .catch(() => setTracked([]))
+      .catch(() => { /* keep the last good list; the 10-min tick retries */ })
       .finally(() => {
         setLoadingTracked(false);
         setTrackedLoaded(true);
@@ -694,9 +700,11 @@ export default function SeatGenius() {
       });
   }, [view, localLoaded]);
 
+  const searchSeq = useRef(0);
   const runSearch = async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) return;
+    const seq = ++searchSeq.current;
     setView("discover");
     setSearching(true);
     setError(null);
@@ -706,15 +714,17 @@ export default function SeatGenius() {
         `${AWS_URL}/search?action=events&q=${encodeURIComponent(trimmed)}`,
       );
       const data = await res.json();
+      if (seq !== searchSeq.current) return; // a newer search has taken over
       const found = detectSeries(data.events || [], tracked);
       setResults(found.results);
       setSeries(found.series);
     } catch {
+      if (seq !== searchSeq.current) return;
       setError("Search failed. Try again.");
       setResults([]);
       setSeries([]);
     } finally {
-      setSearching(false);
+      if (seq === searchSeq.current) setSearching(false);
     }
   };
 
@@ -725,7 +735,12 @@ export default function SeatGenius() {
     setQuery("");
   };
 
+  const selectSeq = useRef(0);
   const selectEvent = useCallback(async (event: Event) => {
+    // Only the latest selection may write state: a slow fetch for a previous
+    // event must not land its curve/tracking under this event's title.
+    const seq = ++selectSeq.current;
+    const current = () => seq === selectSeq.current;
     setSelectedEvent(event);
     setListings([]);
     setBuyUrl(null);
@@ -749,13 +764,16 @@ export default function SeatGenius() {
         fetch(`${AWS_URL}/search?${hq.toString()}`),
       ]);
       const listingsData = await listingsRes.json();
+      if (!current()) return;
       setListings(listingsData.listings || []);
       setBuyUrl(listingsData.buy_url || null);
       setTmUrl(listingsData.ticketmaster_url || null);
       const compareData = await compareRes.json();
+      if (!current()) return;
       setPlatforms(compareData.platforms || []);
       setBestPlatform(compareData.best_platform || null);
       const historyData = await historyRes.json();
+      if (!current()) return;
       setReadings(historyData.readings || []);
       setIsTracked(Boolean(historyData.tracked));
       setTier(historyData.tier || event.tier || "");
@@ -768,9 +786,9 @@ export default function SeatGenius() {
         });
       }
     } catch {
-      setDetailError("Couldn't load event details. Try again.");
+      if (current()) setDetailError("Couldn't load event details. Try again.");
     } finally {
-      setLoadingListings(false);
+      if (current()) setLoadingListings(false);
     }
   }, []);
   selectEventRef.current = selectEvent;
@@ -895,8 +913,7 @@ export default function SeatGenius() {
         if (res.status === 409) { full = true; break; }
       }
       if (full) setError("The watchlist filled up before every session was added (40 max). Untrack something and try again.");
-      setTrackedLoaded(false);
-      loadTracked();
+      setTrackedLoaded(false); // the watch effect refetches
       setView("watch");
     } catch {
       setError("Couldn't track the series. Try again.");
@@ -1274,7 +1291,7 @@ export default function SeatGenius() {
       {!isDesktop &&
         (selectedEvent ? (
           <MobileActionBar
-            price={readings.length ? readings[readings.length - 1].p : (listings.length ? Math.min(...listings.map((l) => l.price).filter((p) => p > 0)) : selectedEvent.lowest_price ?? null)}
+            price={readings.length ? readings[readings.length - 1].p : (lowestListing(listings) ?? selectedEvent.lowest_price ?? null)}
             href={buyUrl || selectedEvent.url || null}
             isTracked={isTracked}
             trackBusy={trackBusy}
@@ -1296,7 +1313,7 @@ const TOUR_STEPS = [
   },
   {
     title: "We log the price around the clock",
-    body: "Every few hours we record the real get-in price. Most curves are readable after two days; the first reading lands within the hour.",
+    body: "We record the cheapest ticket price on a schedule: daily while the event is weeks out, every few hours in the final week. Most curves are readable after a few days.",
   },
   {
     title: "Then we call it: buy or wait",
@@ -2165,7 +2182,7 @@ function WatchView({
           <p className="mt-3 text-sm text-slate-600">
             Nothing on watch yet. Find an event in Discover and hit{" "}
             <span className="text-slate-800">Track price</span> — the first reading
-            lands within the hour and most curves are readable after two days.
+            lands within a day and most curves are readable after a few days.
           </p>
         </div>
       )}
@@ -2808,7 +2825,7 @@ function VerdictHero({
                   <div className="text-sm font-semibold text-slate-900">{typical != null ? `$${Math.round(typical)}` : "—"}</div>
                 </div>
                 <div>
-                  {win?.now ? "Best price" : "Predicted low"}
+                  {win?.now ? "Current low" : "Predicted low (est.)"}
                   <div className="text-sm font-semibold text-emerald-700">
                     {win?.low ? (win.now || win.low[0] === win.low[1] ? `$${win.low[0]}` : `$${win.low[0]}–${win.low[1]}`) : "—"}
                   </div>
@@ -3015,7 +3032,7 @@ function PriceHistoryCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {readings.length >= 2 ? (
+        {readings.filter((r) => Number.isFinite(new Date(r.t).getTime())).length >= 2 ? (
           <PriceChart readings={readings} window={win} eventAt={eventAt} />
         ) : (
           <p className="py-4 text-sm text-slate-500">
@@ -3092,7 +3109,7 @@ function EventDetail({
   const subtitle = isSession
     ? sessionLabel({ ...event, label: session?.label || event.label }, siblings.length ? siblings : [event])
     : "";
-  const lowestListing = listings.length ? Math.min(...listings.map((l) => l.price).filter((p) => p > 0)) : event.lowest_price ?? null;
+  const lowest = lowestListing(listings) ?? event.lowest_price ?? null;
   // Chart and venue guide share a row on wide panels; without a guide the chart takes the full width.
   const hasGuide = Boolean(guideFor({ venue: event.venue, title: event.title, category: event.category }));
 
@@ -3113,7 +3130,7 @@ function EventDetail({
             verdict={verdict}
             window={win}
             readings={readings}
-            lowestListing={Number.isFinite(lowestListing as number) ? (lowestListing as number) : null}
+            lowestListing={lowest}
             buyUrl={buyUrl}
             score={score}
             subtitle={subtitle}
@@ -3426,7 +3443,7 @@ function MarketplaceCard({ readings }: { readings: Reading[] }) {
         </CardTitle>
         <p className="text-xs text-slate-500">
           Checked {formatDate(latest.t)}
-          {time && ` at ${time}`} · updates every 2 hours
+          {time && ` at ${time}`} · updates every few hours in the final week
         </p>
       </CardHeader>
       <CardContent>
