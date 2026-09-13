@@ -200,14 +200,6 @@ type Listing = {
   source: string;
 };
 
-type Platform = {
-  platform: string;
-  lowest_price?: number;
-  highest_price?: number;
-  buy_url?: string;
-  status?: "available" | "pending_affiliate" | "no_data";
-};
-
 function formatDate(dateStr?: string) {
   if (!dateStr) return "TBD";
   const d = new Date(dateStr);
@@ -565,8 +557,6 @@ export default function SeatGenius() {
   const [buyUrl, setBuyUrl] = useState<string | null>(null);
   const [tmUrl, setTmUrl] = useState<string | null>(null);
   const [loadingListings, setLoadingListings] = useState(false);
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [bestPlatform, setBestPlatform] = useState<string | null>(null);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [isTracked, setIsTracked] = useState(false);
   // Ticket type for the selected event: what's being tracked if it is, else
@@ -746,8 +736,6 @@ export default function SeatGenius() {
     setBuyUrl(null);
     setTmUrl(null);
     setResult(null);
-    setPlatforms([]);
-    setBestPlatform(null);
     setReadings([]);
     setIsTracked(false);
     setTier(event.tier || "");
@@ -758,9 +746,8 @@ export default function SeatGenius() {
     try {
       const hq = new URLSearchParams({ action: "history", event_id: String(event.id) });
       if (event.tier) hq.set("tier", event.tier);
-      const [listingsRes, compareRes, historyRes] = await Promise.all([
+      const [listingsRes, historyRes] = await Promise.all([
         fetch(`${AWS_URL}/search?action=listings&event_id=${event.id}`),
-        fetch(`${AWS_URL}/search?action=compare&event_id=${event.id}`),
         fetch(`${AWS_URL}/search?${hq.toString()}`),
       ]);
       const listingsData = await listingsRes.json();
@@ -768,10 +755,6 @@ export default function SeatGenius() {
       setListings(listingsData.listings || []);
       setBuyUrl(listingsData.buy_url || null);
       setTmUrl(listingsData.ticketmaster_url || null);
-      const compareData = await compareRes.json();
-      if (!current()) return;
-      setPlatforms(compareData.platforms || []);
-      setBestPlatform(compareData.best_platform || null);
       const historyData = await historyRes.json();
       if (!current()) return;
       setReadings(historyData.readings || []);
@@ -1008,8 +991,6 @@ export default function SeatGenius() {
     setDetailError(null);
     setBuyUrl(null);
     setTmUrl(null);
-    setPlatforms([]);
-    setBestPlatform(null);
     setReadings([]);
   };
 
@@ -1077,7 +1058,6 @@ export default function SeatGenius() {
         trackBusy={trackBusy}
         onToggleTrack={toggleTrack}
         tier={tier}
-        tierOptions={tierOptionsFor(selectedEvent.category, selectedEvent.title, selectedEvent.venue)}
         onTierChange={setTier}
         trackedTiers={trackedTiers}
         onSwitchTier={switchTier}
@@ -1088,8 +1068,6 @@ export default function SeatGenius() {
         listings={listings}
         buyUrl={buyUrl}
         tmUrl={tmUrl}
-        platforms={platforms}
-        bestPlatform={bestPlatform}
         loadingListings={loadingListings}
         analyzing={analyzing}
         result={result}
@@ -1694,11 +1672,23 @@ function GroupCard({
   const cheapest = priced.length
     ? priced.reduce((a, b) => ((a.last_p as number) <= (b.last_p as number) ? a : b))
     : null;
+  // Clicking the card body opens the cheapest session (the first one if none is
+  // priced yet); the day chips below still open their own session.
+  const openCard = () => onSelect(trackedToEvent(cheapest ?? days[0] ?? first));
   return (
     <>
       <Card
+        role="button"
+        tabIndex={0}
+        onClick={openCard}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            openCard();
+          }
+        }}
         className={cn(
-          "min-w-0 border-slate-200 bg-white backdrop-blur-sm",
+          "min-w-0 cursor-pointer border-slate-200 bg-white backdrop-blur-sm transition-shadow hover:ring-1 hover:ring-slate-300",
           open && "border-blue-500/50 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
         )}
       >
@@ -1738,7 +1728,7 @@ function GroupCard({
             </div>
           </div>
           {tiers.length > 1 && (
-            <div className="mt-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Ticket type">
+            <div className="mt-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Ticket type" onClick={(e) => e.stopPropagation()}>
               {tiers.map((t) => (
                 <button
                   key={t || "any"}
@@ -1765,7 +1755,7 @@ function GroupCard({
               <span className="font-semibold text-emerald-700">${cheapest.last_p}</span>
             </p>
           )}
-          <div className="mt-3">
+          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
             <SessionPicker days={days} selectedId={selectedId} selectedTier={activeTier} onSelect={(d) => onSelect(trackedToEvent(d))} />
           </div>
         </CardContent>
@@ -1799,11 +1789,23 @@ function TierCard({
   const targets = readTargets();
   const now = useNow();
   const daysOut = first.datetime_local ? Math.round((new Date(first.datetime_local).getTime() - now) / 864e5) : null;
+  // Clicking anywhere on the card opens the event on its first tracked ticket
+  // type; the rows below still open the type they name.
+  const openCard = () => onSelect(trackedToEvent(first));
   return (
     <>
       <Card
+        role="button"
+        tabIndex={0}
+        onClick={openCard}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            openCard();
+          }
+        }}
         className={cn(
-          "min-w-0 border-slate-200 bg-white backdrop-blur-sm",
+          "min-w-0 cursor-pointer border-slate-200 bg-white backdrop-blur-sm transition-shadow hover:ring-1 hover:ring-slate-300",
           open && "border-blue-500/50 lg:shadow-[inset_3px_0_0_0_rgb(59_130_246)]",
         )}
       >
@@ -1852,7 +1854,7 @@ function TierCard({
               </div>
             </div>
           </div>
-          <div className="mt-2.5 flex flex-col gap-0.5">
+          <div className="mt-2.5 flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
             {entries.map((e) => {
               const active = open && (e.tier || "") === selectedTier;
               const isCheapest = e.last_p != null && e.last_p === cheapest;
@@ -2487,12 +2489,6 @@ const verdictStyles: Record<
   },
 };
 
-const factorToneClass: Record<string, string> = {
-  good: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  neutral: "border-slate-300 bg-slate-100 text-slate-700",
-  bad: "border-orange-200 bg-orange-50 text-orange-700",
-};
-
 // Under the target chip: whether the browser will actually ping.
 function TargetNotifyRow({ state, onEnable }: { state: NotifyState; onEnable: () => void }) {
   if (state === "granted") {
@@ -2622,11 +2618,6 @@ function VerdictHero({
   trackBusy,
   onToggleTrack,
   tier,
-  tierOptions,
-  onTierChange,
-  trackedTiers,
-  onSwitchTier,
-  onTrackTier,
 }: {
   event: Event;
   verdict: BuyVerdict;
@@ -2641,16 +2632,9 @@ function VerdictHero({
   trackBusy: boolean;
   onToggleTrack: () => void | Promise<void>;
   tier: string;
-  tierOptions: string[];
-  onTierChange: (t: string) => void;
-  trackedTiers: TrackedTier[];
-  onSwitchTier: (t: string) => void;
-  onTrackTier: (t: string) => void;
 }) {
   const s = verdictStyles[verdict.action];
   const demand = demandFromPopularity(event.popularity);
-  const trackedNames = trackedTiers.map((x) => x.tier || "");
-  const untracked = ["", ...tierOptions].filter((o) => !trackedNames.includes(o));
   const last = readings.length ? readings[readings.length - 1] : null;
   const now = last?.p ?? lowestListing ?? null;
   const typical = last?.avg ?? null;
@@ -2791,23 +2775,6 @@ function VerdictHero({
             </div>
             <h3 className={cn("mt-3 text-2xl font-semibold sm:text-3xl", s.title)}>{verdict.title}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">{verdict.detail}</p>
-            <p className={cn("mt-1 max-w-2xl text-xs", verdict.confidence === "data" ? "text-slate-500" : "text-amber-700")}>
-              {verdict.basedOn}
-            </p>
-            {win && !win.now && (
-              <p className="mt-2 max-w-2xl text-sm text-slate-700">
-                Cheapest window <span className="font-medium text-slate-900">{formatWindow(win)}</span>, buy by{" "}
-                <span className="font-medium text-slate-900">{formatDay(win.buyBy)}</span>
-                <span className="text-slate-500"> · est. — {win.basis}</span>
-              </p>
-            )}
-            <div className="mt-4 flex flex-wrap gap-2">
-              {verdict.factors.map((f, i) => (
-                <span key={i} className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium", factorToneClass[f.tone])}>
-                  {f.label}
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* Price + action rail */}
@@ -2934,84 +2901,31 @@ function VerdictHero({
               </div>
             )}
 
-            {(buyUrl || event.url) && (
-              <Button asChild variant="outline" className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100">
-                <a href={buyUrl || event.url} target="_blank" rel="noopener noreferrer">
-                  Buy now{now != null ? ` · $${Math.round(now)}` : ""}
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+            {/* Buy now takes the row; tracking is the square bell beside it. */}
+            <div className="flex items-center gap-2">
+              {(buyUrl || event.url) && (
+                <Button asChild variant="outline" className="min-w-0 flex-1 border-slate-300 bg-white text-slate-900 hover:bg-slate-100">
+                  <a href={buyUrl || event.url} target="_blank" rel="noopener noreferrer">
+                    Buy now{now != null ? ` · $${Math.round(now)}` : ""}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
+              )}
+              <Button
+                onClick={onToggleTrack}
+                disabled={trackBusy}
+                variant="outline"
+                size="icon"
+                aria-label={isTracked ? "Tracking — click to stop" : "Track price"}
+                title={isTracked ? "Tracking — click to stop" : "Track price"}
+                className={cn("shrink-0 border-slate-300 bg-white text-slate-900 hover:bg-slate-100", isTracked && "border-emerald-300 text-emerald-700")}
+              >
+                {trackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : isTracked ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
               </Button>
-            )}
-
-            {tierOptions.length > 0 && !isTracked && (
-              <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                Ticket type
-                <select
-                  value={tier}
-                  onChange={(e) => onTierChange(e.target.value)}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-normal normal-case tracking-normal text-slate-900 focus:border-blue-500 focus:outline-none"
-                >
-                  {untracked.includes("") && <option value="">Cheapest available</option>}
-                  {tierOptions.filter((o) => untracked.includes(o)).map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <Button
-              onClick={onToggleTrack}
-              disabled={trackBusy}
-              variant="outline"
-              size="sm"
-              className={cn("border-slate-300 bg-white text-slate-900 hover:bg-slate-100", isTracked && "border-emerald-300 text-emerald-700")}
-            >
-              {trackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : isTracked ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
-              {isTracked ? (tier ? `Tracking ${tier} · stop` : "Tracking · stop") : "Track price"}
-            </Button>
+            </div>
           </div>
         </div>
 
-        {/* Ticket types already tracked: switch curves, or add another. */}
-        {isTracked && trackedTiers.length > 0 && (
-          <div className={cn("mt-5 flex flex-wrap items-center gap-2 border-t pt-4", s.border)}>
-            <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">Ticket type</span>
-            {trackedTiers.map((x) => {
-              const name = x.tier || "";
-              const active = name === tier;
-              return (
-                <button
-                  key={name || "any"}
-                  type="button"
-                  onClick={() => onSwitchTier(name)}
-                  aria-pressed={active}
-                  className={cn(
-                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                    active ? "border-blue-300 bg-blue-100 text-blue-800" : "border-slate-300 bg-white text-slate-600 hover:text-slate-900",
-                  )}
-                >
-                  {name || "Cheapest available"}
-                  {x.last_p != null && <span className="ml-1 tabular-nums text-slate-500">${x.last_p}</span>}
-                </button>
-              );
-            })}
-            {untracked.some((o) => o !== "") && (
-              <select
-                value=""
-                disabled={trackBusy}
-                onChange={(e) => {
-                  if (e.target.value !== "") onTrackTier(e.target.value);
-                }}
-                aria-label="Track another ticket type"
-                className="rounded-full border border-dashed border-slate-300 bg-transparent px-2.5 py-0.5 text-[11px] font-medium text-slate-600 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">+ another type…</option>
-                {untracked.filter((o) => o !== "").map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        )}
       </CardContent>
     </Card>
   );
@@ -3064,8 +2978,6 @@ function EventDetail({
   listings,
   buyUrl,
   tmUrl,
-  platforms,
-  bestPlatform,
   loadingListings,
   analyzing,
   result,
@@ -3073,7 +2985,6 @@ function EventDetail({
   score,
   onAnalyze,
   tier,
-  tierOptions,
   onTierChange,
   trackedTiers,
   onSwitchTier,
@@ -3090,7 +3001,6 @@ function EventDetail({
   trackBusy: boolean;
   onToggleTrack: () => void;
   tier: string;
-  tierOptions: string[];
   onTierChange: (t: string) => void;
   trackedTiers: TrackedTier[];
   onSwitchTier: (t: string) => void;
@@ -3101,8 +3011,6 @@ function EventDetail({
   listings: Listing[];
   buyUrl: string | null;
   tmUrl: string | null;
-  platforms: Platform[];
-  bestPlatform: string | null;
   loadingListings: boolean;
   analyzing: boolean;
   result: string | null;
@@ -3144,11 +3052,6 @@ function EventDetail({
             trackBusy={trackBusy}
             onToggleTrack={onToggleTrack}
             tier={tier}
-            tierOptions={tierOptions}
-            onTierChange={onTierChange}
-            trackedTiers={trackedTiers}
-            onSwitchTier={onSwitchTier}
-            onTrackTier={onTrackTier}
           />
           {siblings.length > 1 && (
             <Card className="border-slate-200 bg-white backdrop-blur-sm">
@@ -3173,14 +3076,13 @@ function EventDetail({
               event={event}
               tier={tier}
               trackedTiers={trackedTiers}
+              isTracked={isTracked}
+              onTrackTier={onTrackTier}
               onPick={(t) => (trackedTiers.some((x) => (x.tier || "") === t) ? onSwitchTier(t) : onTierChange(t))}
             />
           </div>
           <MarketplaceCard readings={readings} />
           <ListingsCard listings={listings} buyUrl={buyUrl} tmUrl={tmUrl} />
-          {platforms.length > 0 && (
-            <PriceComparisonCard platforms={platforms} bestPlatform={bestPlatform} />
-          )}
         </>
       )}
 
@@ -3260,11 +3162,15 @@ function VenueGuideCard({
   event,
   tier,
   trackedTiers,
+  isTracked,
+  onTrackTier,
   onPick,
 }: {
   event: Event;
   tier: string;
   trackedTiers: TrackedTier[];
+  isTracked: boolean;
+  onTrackTier: (tier: string) => void;
   onPick: (tier: string) => void;
 }) {
   const [more, setMore] = useState(false);
@@ -3276,7 +3182,11 @@ function VenueGuideCard({
   if (!guide) return null;
   const notes = more ? guide.notes : guide.notes.slice(0, 2);
   const priceOf = (t: string) => trackedTiers.find((x) => (x.tier || "") === t)?.last_p ?? null;
-  const isTracked = (t: string) => trackedTiers.some((x) => (x.tier || "") === t);
+  const tierTracked = (t: string) => trackedTiers.some((x) => (x.tier || "") === t);
+  // This list is where ticket types are managed. A tracked type switches the
+  // curve; an untracked one is added to the watchlist when the event is already
+  // tracked, otherwise it just picks what the Track button will start on.
+  const pick = (t: string) => (isTracked && !tierTracked(t) ? onTrackTier(t) : onPick(t));
   // 7-day trend per tracked type, when Price Watch has already fetched its history.
   const trendOf = (t: string) => {
     const c = sparkCache.get(tkey({ id: event.id, tier: t }));
@@ -3285,7 +3195,7 @@ function VenueGuideCard({
   const shown = guide.seating.find((s) => s.tier === (hovered ?? tier)) ?? guide.seating.find((s) => s.tier === tier);
   const priced = guide.seating.map((s) => priceOf(s.tier)).filter((p): p is number => p != null);
   const cheapest = priced.length > 1 ? Math.min(...priced) : null;
-  const zones = guide.seating.map((s) => ({ tier: s.tier, where: s.where, price: priceOf(s.tier), tracked: isTracked(s.tier) }));
+  const zones = guide.seating.map((s) => ({ tier: s.tier, where: s.where, price: priceOf(s.tier), tracked: tierTracked(s.tier) }));
   if (!expanded) {
     // Phone: one tappable row with a thumbnail; the full card opens on tap.
     return (
@@ -3333,7 +3243,7 @@ function VenueGuideCard({
               map={guide.map}
               stage={event.category === "Concerts"}
               activeTier={tier}
-              onPick={onPick}
+              onPick={pick}
               onHover={setHovered}
               zones={zones}
             />
@@ -3355,13 +3265,13 @@ function VenueGuideCard({
           {guide.seating.map((s) => {
             const active = Boolean(tier) && s.tier === tier;
             const p = priceOf(s.tier);
-            const tracked = isTracked(s.tier);
+            const tracked = tierTracked(s.tier);
             const trend = tracked ? trendOf(s.tier) : null;
             return (
               <button
                 type="button"
                 key={s.tier}
-                onClick={() => onPick(s.tier)}
+                onClick={() => pick(s.tier)}
                 onMouseEnter={() => setHovered(s.tier)}
                 onMouseLeave={() => setHovered(null)}
                 aria-pressed={active}
@@ -3388,7 +3298,9 @@ function VenueGuideCard({
                       )}
                     </>
                   ) : (
-                    <span className="text-xs font-medium text-blue-600">{active ? "selected" : "+ pick"}</span>
+                    <span className={cn("text-xs font-medium", tracked ? "text-slate-500" : "text-blue-600")}>
+                      {active ? "selected" : tracked ? "tracking" : isTracked ? "+ track" : "+ pick"}
+                    </span>
                   )}
                 </span>
               </button>
@@ -3504,46 +3416,32 @@ function ListingsCard({
   buyUrl: string | null;
   tmUrl: string | null;
 }) {
-  const hasListings = listings.length > 0;
+  // Nothing useful to show without listings — the hero already carries the buy link.
+  if (listings.length === 0) return null;
   return (
     <Card className="border-slate-200 bg-white backdrop-blur-sm">
       <CardContent className="p-6">
         <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-          {hasListings
-            ? `${listings.length} price tier${listings.length === 1 ? "" : "s"} · SeatGeek + Ticketmaster`
-            : "No live marketplace pricing yet"}
+          {`${listings.length} price tier${listings.length === 1 ? "" : "s"} · SeatGeek + Ticketmaster`}
         </div>
 
-        {hasListings ? (
-          <div className="divide-y divide-slate-200">
-            {listings.map((l, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm text-slate-800">{l.section}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                    {l.source}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-semibold text-slate-900">
-                    ${l.price}
-                    {l.max_price && l.max_price !== l.price ? ` – $${l.max_price}` : ""}
-                  </div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                    per ticket
-                  </div>
-                </div>
+        <div className="divide-y divide-slate-200">
+          {listings.map((l, i) => (
+            <div key={i} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+              <div className="min-w-0">
+                <div className="truncate text-sm text-slate-800">{l.section}</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">{l.source}</div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Live marketplace pricing isn't available for this event from our data partners yet. You can still check current prices directly:
-          </p>
-        )}
+              <div className="text-right">
+                <div className="text-base font-semibold text-slate-900">
+                  ${l.price}
+                  {l.max_price && l.max_price !== l.price ? ` – $${l.max_price}` : ""}
+                </div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">per ticket</div>
+              </div>
+            </div>
+          ))}
+        </div>
 
         {(buyUrl || tmUrl) && (
           <div className="mt-5 flex flex-wrap gap-2">
@@ -3555,7 +3453,7 @@ function ListingsCard({
               >
                 <a href={buyUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-4 w-4" />
-                  {hasListings ? "Buy on SeatGeek" : "View on SeatGeek"}
+                  Buy on SeatGeek
                 </a>
               </Button>
             )}
@@ -3567,80 +3465,12 @@ function ListingsCard({
               >
                 <a href={tmUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-4 w-4" />
-                  {hasListings ? "Buy on Ticketmaster" : "View on Ticketmaster"}
+                  Buy on Ticketmaster
                 </a>
               </Button>
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PriceComparisonCard({
-  platforms,
-  bestPlatform,
-}: {
-  platforms: Platform[];
-  bestPlatform: string | null;
-}) {
-  return (
-    <Card className="border-slate-200 bg-white backdrop-blur-sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-900">
-          <TrendingUp className="h-5 w-5 text-blue-600" />
-          Price Comparison Across Platforms
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {platforms.map((p, i) => {
-          const muted = p.status === "pending_affiliate";
-          const priceText = p.lowest_price
-            ? `$${p.lowest_price}${p.highest_price ? ` – $${p.highest_price}` : ""}`
-            : p.status === "pending_affiliate"
-              ? "Coming soon"
-              : "Price on site";
-          return (
-            <div
-              key={i}
-              className={cn(
-                "flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300",
-                muted && "opacity-60",
-              )}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-slate-900">{p.platform}</p>
-                  {p.platform === bestPlatform && (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
-                    >
-                      Best
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-slate-600">{priceText}</p>
-              </div>
-              {p.buy_url ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
-                >
-                  <a href={p.buy_url} target="_blank" rel="noopener noreferrer">
-                    View
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </Button>
-              ) : (
-                <span className="text-sm text-slate-400">—</span>
-              )}
-            </div>
-          );
-        })}
       </CardContent>
     </Card>
   );
