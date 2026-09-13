@@ -8,11 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import {
-  AlertTriangle,
   BellPlus,
   BellRing,
   Calendar,
-  CheckCircle2,
   ChevronRight,
   Clock,
   Drama,
@@ -254,104 +252,6 @@ function scoreClass(score: number) {
   return "text-slate-600";
 }
 
-function formatAnalysis(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i} className="text-slate-900">
-        {part.slice(2, -2)}
-      </strong>
-    ) : (
-      <span key={i}>{part}</span>
-    ),
-  );
-}
-
-type Insight = {
-  number: string;
-  title: string;
-  body: string;
-};
-
-function parseAnalysis(text: string): Insight[] | null {
-  // Strip leading markdown headers ("## Title")
-  const cleaned = text.replace(/^##+\s+.*(\n|$)/gm, "").trim();
-
-  // Split on numbered section headers: a line starting with optional **,
-  // then digits, period, space. Handles "**1. Title**", "1. **Title**",
-  // "1. Title", "**1. Title** — body", etc.
-  const parts = cleaned.split(/\n(?=\s*(?:\*\*)?\d+\.\s+)/);
-
-  const insights: Insight[] = [];
-  for (const part of parts) {
-    const firstNewline = part.indexOf("\n");
-    const firstLine = firstNewline === -1 ? part : part.slice(0, firstNewline);
-    const rest = firstNewline === -1 ? "" : part.slice(firstNewline + 1);
-
-    // Match: optional **, number, period, space, title, optional trailing **,
-    // then either end of line OR " — body" on same line
-    const header = firstLine.match(
-      /^\s*(?:\*\*)?(\d+)\.\s+(.+?)(?:\*\*)?(?:\s*(?:[—–:]|\s-)\s*(.+))?\s*$/,
-    );
-    if (!header) continue;
-
-    const title = header[2].replace(/\*\*/g, "").trim();
-    const inlineBody = header[3] ? header[3].replace(/\*\*/g, "").trim() : "";
-    const body = [inlineBody, rest.trim()].filter(Boolean).join("\n\n").trim();
-    insights.push({ number: header[1], title, body });
-  }
-
-  return insights.length >= 3 ? insights : null;
-}
-
-type InsightTone = "verdict" | "positive" | "warning" | "info";
-
-const insightTone: Record<number, InsightTone> = {
-  0: "verdict",
-  1: "positive",
-  2: "warning",
-  3: "info",
-};
-
-const insightStyles: Record<
-  InsightTone,
-  { bg: string; border: string; title: string; body: string; iconColor: string }
-> = {
-  verdict: {
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-    title: "text-emerald-700",
-    body: "text-emerald-900/90",
-    iconColor: "text-emerald-600",
-  },
-  positive: {
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-    title: "text-emerald-700",
-    body: "text-emerald-900/80",
-    iconColor: "text-emerald-600",
-  },
-  warning: {
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-    title: "text-amber-700",
-    body: "text-amber-900/80",
-    iconColor: "text-amber-600",
-  },
-  info: {
-    bg: "bg-blue-50",
-    border: "border-blue-200",
-    title: "text-blue-700",
-    body: "text-blue-900/80",
-    iconColor: "text-blue-600",
-  },
-};
-
-function InsightIcon({ tone, className }: { tone: InsightTone; className?: string }) {
-  if (tone === "warning") return <AlertTriangle className={className} />;
-  if (tone === "info") return <Info className={className} />;
-  return <CheckCircle2 className={className} />;
-}
-
 // Matches Tailwind's `lg` breakpoint. Above it the event detail lives in a
 // sticky side panel; below it the detail expands inline under the tapped card.
 // Either way nothing ever navigates away from the one page.
@@ -567,8 +467,6 @@ export default function SeatGenius() {
   // Every ticket type tracked for the selected event (tier switcher).
   const [trackedTiers, setTrackedTiers] = useState<TrackedTier[]>([]);
   const [trackBusy, setTrackBusy] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
   // Local (This Weekend in Chicago)
@@ -735,7 +633,6 @@ export default function SeatGenius() {
     setListings([]);
     setBuyUrl(null);
     setTmUrl(null);
-    setResult(null);
     setReadings([]);
     setIsTracked(false);
     setTier(event.tier || "");
@@ -905,89 +802,9 @@ export default function SeatGenius() {
     }
   };
 
-  const handleAnalyze = async () => {
-    if (!selectedEvent) return;
-    setAnalyzing(true);
-    setResult(null);
-    setDetailError(null);
-
-    const listingText = listings
-      .map(
-        (l) =>
-          `${l.section} — from $${l.price}${l.max_price ? ` to $${l.max_price}` : ""} — ${l.source}`,
-      )
-      .join("\n");
-
-    const eventDay = new Date(selectedEvent.datetime_local).toLocaleDateString(
-      "en-US",
-      { weekday: "long" },
-    );
-    const popularity = selectedEvent.popularity ?? 0;
-    const demandLevel =
-      popularity >= 0.9
-        ? "very high"
-        : popularity >= 0.7
-          ? "high"
-          : popularity >= 0.5
-            ? "moderate"
-            : "low";
-
-    const altSites = (selectedEvent.provider_links || [])
-      .map((l) => {
-        if (l.provider === "stubhub") return `StubHub (event ID: ${l.id})`;
-        if (l.provider === "vividseats")
-          return `Vivid Seats (event ID: ${l.id})`;
-        return null;
-      })
-      .filter(Boolean) as string[];
-    const altSitesText = altSites.length ? altSites.join(", ") : "none available";
-
-    try {
-      const qs = new URLSearchParams({
-        action: "analyze",
-        event_id: String(selectedEvent.id),
-        title: selectedEvent.title ?? "",
-        category: selectedEvent.category ?? "",
-        date: formatDate(selectedEvent.datetime_local),
-        gameDay: eventDay,
-        venue: selectedEvent.venue ?? "",
-        city: selectedEvent.city ?? "",
-        state: selectedEvent.state ?? "",
-        venueCapacity:
-          selectedEvent.venue_capacity != null
-            ? String(selectedEvent.venue_capacity)
-            : "",
-        homeTeam: selectedEvent.home_team || "",
-        awayTeam: selectedEvent.away_team || "",
-        demandLevel,
-        popularity:
-          selectedEvent.popularity != null
-            ? String(selectedEvent.popularity)
-            : "",
-        listingText,
-        altSitesText,
-        tier,
-      });
-      const res = await fetch(`${AWS_URL}/search?${qs.toString()}`);
-      const data = await res.json();
-      const finalText = (data.analysis || "").trim();
-      if (finalText) setResult(finalText);
-      else
-        setDetailError(
-          `Couldn't get analysis: ${data.error?.message || data.error || "Unknown error"}`,
-        );
-    } catch (err) {
-      console.error("AI analysis fetch error:", err);
-      setDetailError("AI analysis failed. Try again.");
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   const resetToEvents = () => {
     setSelectedEvent(null);
     setListings([]);
-    setResult(null);
     setDetailError(null);
     setBuyUrl(null);
     setTmUrl(null);
@@ -1069,11 +886,8 @@ export default function SeatGenius() {
         buyUrl={buyUrl}
         tmUrl={tmUrl}
         loadingListings={loadingListings}
-        analyzing={analyzing}
-        result={result}
         error={detailError}
         score={selectedScore}
-        onAnalyze={handleAnalyze}
       />
     ) : null;
 
@@ -2979,11 +2793,8 @@ function EventDetail({
   buyUrl,
   tmUrl,
   loadingListings,
-  analyzing,
-  result,
   error,
   score,
-  onAnalyze,
   tier,
   onTierChange,
   trackedTiers,
@@ -3012,11 +2823,8 @@ function EventDetail({
   buyUrl: string | null;
   tmUrl: string | null;
   loadingListings: boolean;
-  analyzing: boolean;
-  result: string | null;
   error: string | null;
   score: number | null;
-  onAnalyze: () => void;
 }) {
   const isSession = Boolean(event.group);
   const subtitle = isSession
@@ -3092,35 +2900,6 @@ function EventDetail({
         </div>
       )}
 
-      <Button
-        onClick={onAnalyze}
-        disabled={analyzing || loadingListings}
-        className="w-full bg-blue-600 text-white hover:bg-blue-700"
-        size="lg"
-      >
-        {analyzing ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Analyzing…
-          </>
-        ) : (
-          <>
-            <Sparkles className="h-4 w-4" />
-            Get AI Buy-Timing Analysis
-          </>
-        )}
-      </Button>
-
-      {analyzing && (
-        <LoadingRow label="AI is reading demand signals and price trends for this event…" />
-      )}
-
-      {result && (
-        <AnalysisCard
-          text={result}
-          eventTitle={event.short_title || event.title}
-        />
-      )}
     </div>
   );
 }
@@ -3476,71 +3255,6 @@ function ListingsCard({
   );
 }
 
-function AnalysisCard({ text, eventTitle }: { text: string; eventTitle: string }) {
-  const insights = parseAnalysis(text);
-
-  return (
-    <Card className="border-slate-200 bg-white backdrop-blur-sm">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-slate-900">
-          <Sparkles className="h-5 w-5 text-blue-600" />
-          AI Buy-Timing Analysis: {eventTitle}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {insights ? (
-          insights.slice(0, 4).map((insight, idx) => (
-            <InsightBlock key={idx} insight={insight} index={idx} />
-          ))
-        ) : (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-            {formatAnalysis(text)}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function InsightBlock({ insight, index }: { insight: Insight; index: number }) {
-  const tone = insightTone[index] ?? "info";
-  const styles = insightStyles[tone];
-  const isVerdict = tone === "verdict";
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border p-5",
-        styles.bg,
-        styles.border,
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <InsightIcon
-          tone={tone}
-          className={cn("mt-0.5 h-5 w-5 shrink-0", styles.iconColor)}
-        />
-        <div className="min-w-0 flex-1">
-          <h3
-            className={cn(
-              isVerdict ? "text-xl" : "text-base",
-              "mb-2 font-medium",
-              styles.title,
-            )}
-          >
-            {insight.number}. {insight.title}
-          </h3>
-          <div className={cn("whitespace-pre-wrap text-sm leading-relaxed", styles.body)}>
-            {formatAnalysis(insight.body)}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Placeholder cards while a list loads: the page keeps its shape instead of
-// collapsing to one spinner line.
 function SkeletonCards({ count = 3, label }: { count?: number; label: string }) {
   return (
     <div className="grid gap-3" role="status" aria-label={label}>
