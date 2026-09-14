@@ -135,6 +135,13 @@ export function PriceChart({
   };
 
   const hp = hover != null ? model.pts[hover] : null;
+  const [nowMs] = useState(() => Date.now());
+  const agoLabel = (t: string) => {
+    const min = Math.max(0, Math.round((nowMs - new Date(t).getTime()) / 60e3));
+    if (min < 60) return `${min}m ago`;
+    if (min < 48 * 60) return `${Math.round(min / 60)}h ago`;
+    return `${Math.round(min / 1440)}d ago`;
+  };
   const fmtFull = (t: string) =>
     new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -210,6 +217,10 @@ export function PriceChart({
 
         <path d={model.area} fill="#2563eb" opacity="0.08" />
         <path d={model.path} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* one dot per logged reading, so a flat price still shows the sweep is alive */}
+        {model.pts.slice(0, -1).map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="#ffffff" stroke="#2563eb" strokeWidth="1.5" />
+        ))}
 
         {/* forecast tail + estimated low */}
         {model.tail && (
@@ -285,7 +296,7 @@ export function PriceChart({
       )}
 
       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-3.5 bg-blue-600" />logged get-in price</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-3.5 bg-blue-600" />logged get-in price · {model.pts.length} reading{model.pts.length === 1 ? "" : "s"}</span>
         {model.tail && <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3.5 border-t-2 border-dashed border-blue-600" />estimated path</span>}
         {model.band && <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-3.5 border border-emerald-200 bg-emerald-50" />cheapest window (est.)</span>}
         {model.buyBy && <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3.5 border-t-2 border-dashed border-amber-700" />buy-by</span>}
@@ -293,7 +304,7 @@ export function PriceChart({
 
       {showTiles && (
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Tile k="Now" v={`$${Math.round(last.p)}`} s={delta7 != null ? `${delta7 < 0 ? "▼" : delta7 > 0 ? "▲" : "="} $${Math.abs(Math.round(delta7))} in 7 days` : fmtFull(last.t)} tone={delta7 != null && delta7 < 0 ? "good" : undefined} />
+          <Tile k="Now" v={`$${Math.round(last.p)}`} s={`${delta7 != null ? `${delta7 < 0 ? "▼" : delta7 > 0 ? "▲" : "="} $${Math.abs(Math.round(delta7))} in 7 days · ` : ""}checked ${agoLabel(last.t)}`} tone={delta7 != null && delta7 < 0 ? "good" : undefined} />
           <Tile k="Lowest logged" v={`$${Math.round(model.lowest.p)}`} s={fmtFull(model.lowest.t)} />
           <Tile k="Typical" v={model.typical != null ? `$${Math.round(model.typical)}` : "—"} s="average listing" />
           {win?.low ? (
