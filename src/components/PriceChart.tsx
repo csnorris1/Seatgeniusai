@@ -151,7 +151,7 @@ export function PriceChart({
   const lastPt = model.pts[model.pts.length - 1];
 
   return (
-    <div className="relative">
+    <div className="relative @container">
       {readings.length > 3 && (
         <div className="absolute right-0 -top-9 flex gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 text-xs text-slate-600">
           {(["7d", "30d", "all"] as Range[]).map((r) => (
@@ -303,15 +303,15 @@ export function PriceChart({
       </div>
 
       {showTiles && (
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Tile k="Now" v={`$${Math.round(last.p)}`} s={`${delta7 != null ? `${delta7 < 0 ? "▼" : delta7 > 0 ? "▲" : "="} $${Math.abs(Math.round(delta7))} in 7 days · ` : ""}checked ${agoLabel(last.t)}`} tone={delta7 != null && delta7 < 0 ? "good" : undefined} />
+        <div className="mt-3 grid grid-cols-2 gap-2 @[34rem]:grid-cols-4">
+          <Tile k="Now" v={`$${Math.round(last.p)}`} s={`${delta7 != null ? `${delta7 === 0 ? "flat" : `${delta7 < 0 ? "▼" : "▲"} $${Math.abs(Math.round(delta7))}`} 7 days · ` : ""}checked ${agoLabel(last.t)}`} tone={delta7 != null && delta7 < 0 ? "good" : undefined} />
           <Tile k="Lowest logged" v={`$${Math.round(model.lowest.p)}`} s={fmtFull(model.lowest.t)} />
           <Tile k="Typical" v={model.typical != null ? `$${Math.round(model.typical)}` : "—"} s="average listing" />
           {win?.low ? (
             <Tile
-              k={win.now ? "Best price" : "Predicted low (est.)"}
+              k={win.now ? "Best price" : "Predicted low"}
               v={win.now ? `$${Math.round(last.p)}` : win.low[0] === win.low[1] ? `$${win.low[0]}` : `$${win.low[0]}–${win.low[1]}`}
-              s={win.now ? "buy now" : `${formatWindow(win)} · ${win.confidence} confidence`}
+              s={win.now ? "buy now" : `est. ${formatWindow(win)} · ${win.confidence} confidence`}
               tone="good"
             />
           ) : (
@@ -327,7 +327,7 @@ function Tile({ k, v, s, tone }: { k: string; v: string; s: string; tone?: "good
   return (
     <div className={cn("rounded-lg border px-3 py-2", tone === "good" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50")}>
       <div className={cn("text-[11px] font-medium uppercase tracking-wider", tone === "good" ? "text-emerald-700" : "text-slate-500")}>{k}</div>
-      <div className={cn("mt-0.5 text-xl font-semibold leading-6", tone === "good" ? "text-emerald-900" : "text-slate-900")}>{v}</div>
+      <div className={cn("mt-0.5 whitespace-nowrap text-xl font-semibold leading-6", tone === "good" ? "text-emerald-900" : "text-slate-900")}>{v}</div>
       <div className={cn("mt-0.5 text-[11px]", tone === "good" ? "text-emerald-700" : "text-slate-500")}>{s}</div>
     </div>
   );
