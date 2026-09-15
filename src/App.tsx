@@ -2456,6 +2456,11 @@ function VerdictHero({
   const delta7 = last && weekAgo && weekAgo !== last ? last.p - weekAgo.p : null;
   const isSession = Boolean(event.group);
   const title = isSession ? groupTitle(event.short_title || event.title) : event.short_title || event.title;
+  // The date line below already names the day, so drop it from the session label.
+  const heroSub = subtitle
+    .split(" · ")
+    .filter((part) => part !== dayLabel(event.datetime_local))
+    .join(" · ");
 
   // Target price (this device).
   const key = tkey({ id: event.id, tier });
@@ -2538,28 +2543,32 @@ function VerdictHero({
 
   return (
     <Card className={cn("backdrop-blur-sm", s.border, s.bg)}>
-      <CardContent className="p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-5">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {/* Title: desktop only — on phones the card above already shows it. */}
             <div className="hidden items-start justify-between gap-3 lg:flex">
-              <div className="flex min-w-0 items-start gap-3">
-                <span className={cn("mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border", metaFor(event.category).chip)}>
-                  <CategoryIcon category={event.category} className="h-5 w-5" />
+              <div className="flex min-w-0 items-start gap-2.5">
+                <span className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border", metaFor(event.category).chip)}>
+                  <CategoryIcon category={event.category} className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
-                  <h2 className="text-2xl text-slate-900">{title}</h2>
-                  {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
-                  {matchup && <p className="mt-0.5 text-sm font-medium text-slate-800">{matchup}</p>}
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-700">
+                  <h2 className="text-xl font-semibold leading-tight text-slate-900">{title}</h2>
+                  {(heroSub || matchup) && (
+                    <p className="mt-0.5 text-[13px] text-slate-600">
+                      {heroSub}
+                      {matchup && <span className="font-medium text-slate-800">{heroSub ? ` · ${matchup}` : matchup}</span>}
+                    </p>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-slate-700">
                     <span className="inline-flex items-center gap-1.5">
-                      <Calendar className="h-4 w-4 text-slate-500" />
+                      <Calendar className="h-3.5 w-3.5 text-slate-500" />
                       {formatDate(event.datetime_local)}
                       {formatTime(event.datetime_local) && ` • ${formatTime(event.datetime_local)}`}
                     </span>
                     {event.venue && (
                       <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="h-4 w-4 text-slate-500" />
+                        <MapPin className="h-3.5 w-3.5 text-slate-500" />
                         {event.venue}
                         {event.city ? `, ${event.city}` : ""}
                       </span>
@@ -2570,7 +2579,7 @@ function VerdictHero({
               {score != null && (
                 <div className="shrink-0 text-right">
                   <div className="text-[11px] uppercase tracking-wider text-slate-500">Deal score</div>
-                  <div className={cn("text-3xl font-semibold leading-8", scoreClass(score))}>
+                  <div className={cn("text-2xl font-semibold leading-7", scoreClass(score))}>
                     {score}
                     <span className="text-sm text-slate-500">/100</span>
                   </div>
@@ -2578,17 +2587,17 @@ function VerdictHero({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 lg:mt-5">
-              <Clock className={cn("h-5 w-5", s.title)} />
-              <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider", s.badge)}>{s.label}</span>
+            <div className="flex flex-wrap items-center gap-2 lg:mt-4">
+              <Clock className={cn("h-4 w-4", s.title)} />
+              <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider", s.badge)}>{s.label}</span>
               {demand && (
-                <Badge variant="outline" className={cn("px-2.5 py-0 text-[11px]", demandClasses[demand])}>
+                <Badge variant="outline" className={cn("px-2 py-0 text-[11px]", demandClasses[demand])}>
                   {demand} demand
                 </Badge>
               )}
             </div>
-            <h3 className={cn("mt-3 text-2xl font-semibold sm:text-3xl", s.title)}>{verdict.title}</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-700">{verdict.detail}</p>
+            <h3 className={cn("mt-1.5 text-xl font-semibold leading-tight sm:text-2xl", s.title)}>{verdict.title}</h3>
+            <p className="mt-1 max-w-2xl text-[13px] leading-snug text-slate-700">{verdict.detail}</p>
           </div>
 
           {/* Price + action rail */}
@@ -2611,7 +2620,7 @@ function VerdictHero({
                   <div className="text-sm font-semibold text-slate-900">{typical != null ? `$${Math.round(typical)}` : "—"}</div>
                 </div>
                 <div>
-                  {win?.now ? "Current low" : "Predicted low (est.)"}
+                  {win?.now ? "Current low" : "Est. low"}
                   <div className="text-sm font-semibold text-emerald-700">
                     {win?.low ? (win.now || win.low[0] === win.low[1] ? `$${win.low[0]}` : `$${win.low[0]}–${win.low[1]}`) : "—"}
                   </div>
