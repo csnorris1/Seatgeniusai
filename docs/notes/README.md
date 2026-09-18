@@ -14,3 +14,4 @@ topic. Newest first in the list below.
 
 How to add one: `docs/notes/YYYY-MM-DD-topic.md`, plain English, lead with
 what changed and what's still open. Link it here.
+- `2026-09-18-project-board.md` — the GitHub project board (columns, labels, how sessions file and move issues)
