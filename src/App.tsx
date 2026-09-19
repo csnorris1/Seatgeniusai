@@ -2724,7 +2724,7 @@ function VerdictHero({
               </div>
             )}
 
-            {/* Buy now takes the row; tracking is the square bell beside it. */}
+            {/* Buy now takes the row; the labelled track button sits beside it. */}
             <div className="flex items-center gap-2">
               {(buyUrl || event.url) && (
                 <Button asChild variant="outline" className="min-w-0 flex-1 border-slate-300 bg-white text-slate-900 hover:bg-slate-100">
@@ -2738,12 +2738,11 @@ function VerdictHero({
                 onClick={onToggleTrack}
                 disabled={trackBusy}
                 variant="outline"
-                size="icon"
-                aria-label={isTracked ? "Tracking — click to stop" : "Track price"}
-                title={isTracked ? "Tracking — click to stop" : "Track price"}
+                title={isTracked ? "Click to stop tracking" : "Log this ticket type's price automatically"}
                 className={cn("shrink-0 border-slate-300 bg-white text-slate-900 hover:bg-slate-100", isTracked && "border-emerald-300 text-emerald-700")}
               >
                 {trackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : isTracked ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
+                {isTracked ? "Tracking" : "Track price"}
               </Button>
             </div>
           </div>
