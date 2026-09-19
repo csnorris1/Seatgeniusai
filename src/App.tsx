@@ -71,6 +71,7 @@ type Event = {
   title: string;
   short_title?: string;
   category?: string;
+  type?: string | null;
   datetime_local: string;
   venue: string;
   city: string;
@@ -410,6 +411,7 @@ const localToEvent = (e: LocalEvent): Event => ({
   id: e.id,
   title: e.title,
   category: e.category,
+  type: e.type,
   datetime_local: e.datetime_local,
   venue: e.venue || "",
   city: e.city || "",
@@ -704,6 +706,7 @@ export default function SeatGenius() {
           venue: selectedEvent.venue || "",
           city: selectedEvent.city || "",
           category: selectedEvent.category || "",
+          type: selectedEvent.type || "",
           url: selectedEvent.url || "",
         });
         if (selectedEvent.popularity != null)
@@ -748,6 +751,7 @@ export default function SeatGenius() {
         venue: selectedEvent.venue || "",
         city: selectedEvent.city || "",
         category: selectedEvent.category || "",
+        type: selectedEvent.type || "",
         url: selectedEvent.url || "",
         tier: t,
       });
@@ -784,6 +788,7 @@ export default function SeatGenius() {
           venue: ev.venue || "",
           city: ev.city || "",
           category: ev.category || "",
+          type: ev.type || "",
           url: ev.url || "",
           group: sr.key,
           tier: seriesTier,

@@ -760,6 +760,7 @@ Keep it concise and conversational. Bold the key insights.`;
         venue: inherit(params.venue, 'venue'),
         city: inherit(params.city, 'city'),
         category: inherit(params.category, 'category'),
+        type: inherit(params.type, 'type'),
         popularity: params.popularity ? Number(params.popularity) : (sib ? sib.popularity ?? null : null),
         url: inherit(params.url, 'url'),
         tracked_at: new Date().toISOString(),
@@ -1127,6 +1128,11 @@ Keep it concise and conversational. Bold the key insights.`;
       // it shows up while pricing, never by spending a search on it.
       const sessionRuleText = ' For tournament sessions (tennis etc.): a day session and a night session on the same date are different tickets — price only the session whose number, start time and label are given, never a grounds pass or a different session. A marketplace\'s "from $X" / get-in price shown for that session number (Vivid Seats, SeatGeek, StubHub, TickPick list US Open tickets by session) counts as confirmed — report it. At Arthur Ashe Stadium the cheapest seat in any session is a Promenade seat, so the get-in price of a session IS the Promenade price. If the marketplace listing or the tournament schedule shows who is playing in that session, fill "matchup" (e.g. "Alcaraz vs Shelton; Pegula vs Navarro"); if the draw is not set yet, omit it. Do not spend a search just to find the matchup.';
       const isSession = (e) => Boolean(e.group) && /session\s*\d+/i.test(e.title || '');
+      // MLB clubs sell primary AND their own verified resale through the team's
+      // MLB.com ticket page (Tickets.com), which is often the true get-in —
+      // the aggregators miss it. `type` comes from SeatGeek via the track call.
+      const isMlb = (e) => (e.type || '').toLowerCase() === 'mlb' || /\bmlb\b/i.test(e.category || '');
+      const mlbRuleText = ' For MLB games, also check the home team\'s official ticket page on MLB.com (mlb.com/<team>/tickets, including the team\'s verified resale marketplace there): if its cheapest ticket for that game and ticket type beats the resale marketplaces, report that price as "p".';
 
       // Scan for the first balanced JSON object carrying a "prices" array;
       // the answer can arrive split across text blocks with prose around it.
@@ -1165,6 +1171,7 @@ Keep it concise and conversational. Bold the key insights.`;
         const rules = [
           batch.some(e => e.tier) ? tierRuleText : '',
           batch.some(isSession) ? sessionRuleText : '',
+          batch.some(isMlb) ? mlbRuleText : '',
           deep ? deepRuleText : '',
         ].join('');
         const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
