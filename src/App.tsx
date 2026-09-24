@@ -26,7 +26,6 @@ import {
   Music,
   Palette,
   Search,
-  Sparkles,
   Ticket,
   TrendingUp,
   Trophy,
@@ -887,6 +886,7 @@ export default function SeatGenius() {
         siblings={siblings}
         session={selectedEvent.group ? sessionMeta || { label: selectedEvent.label } : null}
         onSelectSibling={(t) => selectEvent(trackedToEvent(t))}
+        showSessions={view !== "watch"}
         listings={listings}
         buyUrl={buyUrl}
         tmUrl={tmUrl}
@@ -928,49 +928,14 @@ export default function SeatGenius() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900 font-sans">
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              <span className="text-slate-900">SEAT</span>
-              <span className="text-blue-500">GENIUS</span>
-              <span className="text-blue-600">.</span>
-            </h1>
-            <p className="mt-0.5 hidden text-sm text-slate-600 sm:block">
-              Know the best time to buy tickets — to anything.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <a
-              href="world-cup/"
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
-            >
-              <Trophy className="h-4 w-4" />
-              <span className="hidden sm:inline">World Cup 2026</span>
-              <span className="sm:hidden">World Cup</span>
-            </a>
-            <Badge
-              variant="outline"
-              className="hidden sm:inline-flex border-emerald-200 bg-emerald-50 text-emerald-700"
-            >
-              <Sparkles className="h-3 w-3" />
-              Powered by AI
-            </Badge>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:px-6 lg:py-8 lg:pb-8">
-        <FirstVisitTour />
-        <section className="mb-6 max-w-3xl">
-          <h2 className="text-2xl text-slate-900 sm:text-3xl">
-            When should you buy your next ticket?
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Search any artist, team, or show. We track prices over time and tell
-            you whether to buy now or wait.
-          </p>
+        <div className="mx-auto flex max-w-[88rem] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 sm:px-6">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            <span className="text-slate-900">SEAT</span>
+            <span className="text-blue-500">GENIUS</span>
+            <span className="text-blue-600">.</span>
+          </h1>
           <form
-            className="mt-4 flex gap-2"
+            className="order-last flex w-full gap-2 sm:order-none sm:w-auto sm:max-w-xl sm:flex-1"
             onSubmit={(e) => {
               e.preventDefault();
               runSearch(query);
@@ -981,62 +946,65 @@ export default function SeatGenius() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Try “Bad Bunny”, “Lakers”, “Wicked”…"
-                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                placeholder="Search any artist, team or show"
+                aria-label="Search events"
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
             <Button
               type="submit"
               disabled={searching || !query.trim()}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="h-10 bg-blue-600 text-white hover:bg-blue-700"
             >
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
             </Button>
           </form>
-          {/* Quick searches: one tap on a phone, and a hint of the range on desktop. */}
-          {!searched && (
-            <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-              {QUICK_SEARCHES.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => {
-                    setQuery(q);
-                    runSearch(q);
-                  }}
-                  className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
+          <nav className="ml-auto hidden rounded-lg border border-slate-200 bg-slate-50 p-1 lg:flex" aria-label="Sections">
+            {(
+              [
+                ["discover", "Discover"],
+                ["watch", "Price Watch"],
+                ["local", "Chicago"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                aria-current={view === key ? "page" : undefined}
+                className={cn(
+                  "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  view === key ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
 
-        <div className="lg:grid lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,29rem)_minmax(0,1fr)]">
+      <main className="mx-auto max-w-[88rem] px-4 py-4 pb-24 sm:px-6 lg:pb-6">
+        <FirstVisitTour />
+        <div className="lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-5 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
           <div className="min-w-0">
-            <div className="mb-5 hidden rounded-lg border border-slate-200 bg-white p-1 lg:flex">
-              {(
-                [
-                  ["discover", "Discover"],
-                  ["watch", "Price Watch"],
-                  ["local", "Chicago"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setView(key)}
-                  className={cn(
-                    "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    view === key
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-600 hover:text-slate-900",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {/* Quick searches: one tap on a phone, and a hint of the range on desktop. */}
+            {view === "discover" && !searched && (
+              <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {QUICK_SEARCHES.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => {
+                      setQuery(q);
+                      runSearch(q);
+                    }}
+                    className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {view === "discover" && (
               <DiscoverView
@@ -1077,7 +1045,7 @@ export default function SeatGenius() {
           {/* self-stretch: the sticky panel can only travel as far as its
               parent is tall, so the aside must span the whole row. */}
           <aside className="hidden min-w-0 lg:block lg:self-stretch">
-            <div className="sticky top-[5.75rem] max-h-[calc(100vh-6.75rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
+            <div className="sticky top-[4.75rem] max-h-[calc(100vh-5.75rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
               {detail ?? <EmptyPanel />}
             </div>
           </aside>
@@ -2312,9 +2280,9 @@ const verdictStyles: Record<
 function TargetNotifyRow({ state, onEnable }: { state: NotifyState; onEnable: () => void }) {
   if (state === "granted") {
     return (
-      <p className="flex items-center gap-1.5 text-[11px] text-slate-600">
+      <p className="flex items-center gap-1.5 text-[11px] text-slate-600" title="We ping this device while SeatGenius is open in a tab">
         <BellRing className="h-3.5 w-3.5 text-emerald-600" />
-        Notifications on · we ping this device while SeatGenius is open in a tab
+        Browser alerts on
       </p>
     );
   }
@@ -2559,13 +2527,13 @@ function VerdictHero({
                 </span>
                 <div className="min-w-0">
                   <h2 className="text-xl font-semibold leading-tight text-slate-900">{title}</h2>
-                  {(heroSub || matchup) && (
-                    <p className="mt-0.5 text-[13px] text-slate-600">
-                      {heroSub}
-                      {matchup && <span className="font-medium text-slate-800">{heroSub ? ` · ${matchup}` : matchup}</span>}
-                    </p>
-                  )}
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-slate-700">
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-slate-600">
+                    {(heroSub || matchup) && (
+                      <span>
+                        {heroSub}
+                        {matchup && <span className="font-medium text-slate-800">{heroSub ? ` · ${matchup}` : matchup}</span>}
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5 text-slate-500" />
                       {formatDate(event.datetime_local)}
@@ -2592,7 +2560,7 @@ function VerdictHero({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:mt-4">
+            <div className="flex flex-wrap items-center gap-2 lg:mt-3">
               <Clock className={cn("h-4 w-4", s.title)} />
               <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider", s.badge)}>{s.label}</span>
               {demand && (
@@ -2603,6 +2571,76 @@ function VerdictHero({
             </div>
             <h3 className={cn("mt-1.5 text-xl font-semibold leading-tight sm:text-2xl", s.title)}>{verdict.title}</h3>
             <p className="mt-1 max-w-2xl text-[13px] leading-snug text-slate-700">{verdict.detail}</p>
+            {/* Target price, with its browser and email alerts, on one wrapped row. */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {editing ? (
+                <form
+                  className="flex w-full max-w-xs gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    saveTarget();
+                  }}
+                >
+                  <div className="relative flex-1">
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
+                    <input
+                      autoFocus
+                      inputMode="numeric"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
+                      placeholder={suggested != null ? String(suggested) : "target"}
+                      aria-label="Target price"
+                      className="h-8 w-full rounded-md border border-slate-300 bg-white pl-6 pr-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <Button type="submit" size="sm" className="bg-blue-600 text-white hover:bg-blue-700">Save</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)} className="border-slate-300 bg-white px-2 text-slate-700" aria-label="Cancel">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </form>
+              ) : target != null ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border py-0.5 pl-3 pr-1 text-xs",
+                    hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-blue-200 bg-blue-50 text-blue-900",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setTp({ ...cur, draft: String(target), editing: true })}
+                    title={hit ? "The price is at or under your target. Click to change it." : "Click to change your target"}
+                    className="font-medium"
+                  >
+                    {hit ? "✓ Target hit" : "Target"} <span className="font-semibold tabular-nums">${target}</span>
+                  </button>
+                  <button type="button" onClick={clearTarget} aria-label="Clear target" className="rounded-full p-1 text-slate-500 hover:text-slate-900">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => setTp({ ...cur, draft: suggested != null ? String(suggested) : "", editing: true })}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <Target className="h-4 w-4" />
+                  {suggested != null ? `Set a target at $${suggested}` : "Set a target price"}
+                </Button>
+              )}
+              {target != null && !editing && (
+                <>
+                  <TargetNotifyRow state={notify} onEnable={() => void enableNotify(target)} />
+                  <TargetEmailRow
+                    state={emCur}
+                    onEdit={() => setEm({ ...emCur, editing: true, err: null, msg: null })}
+                    onDraft={(v) => setEm({ ...emCur, draft: v })}
+                    onCancel={() => setEm({ ...emCur, editing: false, err: null })}
+                    onSave={() => void saveEmailAlert(target)}
+                    onStop={() => void stopEmailAlert()}
+                  />
+                </>
+              )}
+            </div>
           </div>
 
           {/* Price + action rail */}
@@ -2638,96 +2676,6 @@ function VerdictHero({
                 </div>
               )}
             </div>
-
-            {/* Target price */}
-            {editing ? (
-              <form
-                className="flex gap-1.5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  saveTarget();
-                }}
-              >
-                <div className="relative flex-1">
-                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500">$</span>
-                  <input
-                    autoFocus
-                    inputMode="numeric"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
-                    placeholder={suggested != null ? String(suggested) : "target"}
-                    aria-label="Target price"
-                    className="h-9 w-full rounded-md border border-slate-300 bg-white pl-6 pr-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">Save</Button>
-                <Button type="button" variant="outline" onClick={() => setEditing(false)} className="border-slate-300 bg-white px-2.5 text-slate-700">
-                  <X className="h-4 w-4" />
-                </Button>
-              </form>
-            ) : target != null ? (
-              <button
-                type="button"
-                onClick={() => setTp({ ...cur, draft: String(target), editing: true })}
-                className={cn(
-                  "flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm",
-                  hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-blue-200 bg-blue-50 text-blue-900",
-                )}
-              >
-                <span>
-                  {hit ? "Target hit" : "Target"} <span className="font-semibold">${target}</span>
-                  <span className={cn("block text-[11px]", hit ? "text-emerald-700" : "text-blue-700")}>
-                    {hit
-                      ? "the price is at or under your target"
-                      : emCur.on
-                        ? "we'll email you when it hits"
-                        : notify === "granted"
-                          ? "we'll notify you when it hits · this device"
-                          : "flagged in Price Watch when it hits · this device"}
-                  </span>
-                </span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearTarget();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      clearTarget();
-                    }
-                  }}
-                  aria-label="Clear target"
-                  className="rounded p-1 text-slate-500 hover:text-slate-900"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </span>
-              </button>
-            ) : (
-              <Button
-                onClick={() => setTp({ ...cur, draft: suggested != null ? String(suggested) : "", editing: true })}
-                className="bg-blue-600 text-white hover:bg-blue-700"
-              >
-                <Target className="h-4 w-4" />
-                {suggested != null ? `Set a target at $${suggested}` : "Set a target price"}
-              </Button>
-            )}
-            {target != null && !editing && (
-              <div className="flex flex-col gap-1.5">
-                <TargetNotifyRow state={notify} onEnable={() => void enableNotify(target)} />
-                <TargetEmailRow
-                  state={emCur}
-                  onEdit={() => setEm({ ...emCur, editing: true, err: null, msg: null })}
-                  onDraft={(v) => setEm({ ...emCur, draft: v })}
-                  onCancel={() => setEm({ ...emCur, editing: false, err: null })}
-                  onSave={() => void saveEmailAlert(target)}
-                  onStop={() => void stopEmailAlert()}
-                />
-              </div>
-            )}
 
             {/* Buy now takes the row; the labelled track button sits beside it. */}
             <div className="flex items-center gap-2">
@@ -2816,6 +2764,7 @@ function EventDetail({
   siblings,
   session,
   onSelectSibling,
+  showSessions,
 }: {
   event: Event;
   verdict: BuyVerdict;
@@ -2832,6 +2781,7 @@ function EventDetail({
   siblings: TrackedEvent[];
   session: SessionContext | null;
   onSelectSibling: (t: TrackedEvent) => void;
+  showSessions: boolean;
   listings: Listing[];
   buyUrl: string | null;
   tmUrl: string | null;
@@ -2874,7 +2824,8 @@ function EventDetail({
             onToggleTrack={onToggleTrack}
             tier={tier}
           />
-          {siblings.length > 1 && (
+          {/* Price Watch's group card already shows every session; elsewhere this is the only picker. */}
+          {siblings.length > 1 && showSessions && (
             <Card className="border-slate-200 bg-white backdrop-blur-sm">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-slate-900">
@@ -2891,7 +2842,7 @@ function EventDetail({
               </CardContent>
             </Card>
           )}
-          <div className={cn("grid gap-4", hasGuide && "xl:grid-cols-2")}>
+          <div className={cn("grid items-start gap-4", hasGuide && "xl:grid-cols-2")}>
             <PriceHistoryCard readings={readings} isTracked={isTracked} window={win} eventAt={event.datetime_local} />
             <VenueGuideCard
               event={event}
@@ -2972,7 +2923,8 @@ function VenueGuideCard({
   const expanded = isDesktop || opened;
   const guide = guideFor({ venue: event.venue, title: event.title, category: event.category });
   if (!guide) return null;
-  const notes = more ? guide.notes : guide.notes.slice(0, 2);
+  // Tips stay folded so the card fits beside the chart.
+  const notes = more ? guide.notes : [];
   const priceOf = (t: string) => trackedTiers.find((x) => (x.tier || "") === t)?.last_p ?? null;
   const tierTracked = (t: string) => trackedTiers.some((x) => (x.tier || "") === t);
   // This list is where ticket types are managed. A tracked type switches the
@@ -3017,20 +2969,19 @@ function VenueGuideCard({
             <Info className="h-5 w-5 text-blue-600" />
             Know before you buy
           </span>
-          {!isDesktop && (
+          {isDesktop ? (
+            <span className="truncate text-xs font-normal text-slate-500">{guide.name}</span>
+          ) : (
             <button type="button" onClick={() => setOpened(false)} className="text-xs font-normal text-slate-500" aria-label="Collapse">
               Hide
             </button>
           )}
         </CardTitle>
-        <p className="text-xs text-slate-500">
-          {guide.name}
-          {guide.map ? " · tap a zone to see what you get" : ""}
-        </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {guide.map && (
-          <>
+        {/* Map beside the ticket-type list, so the card stays short next to the chart. */}
+        <div className={cn("grid gap-3", guide.map && "sm:grid-cols-[8.5rem_minmax(0,1fr)] sm:items-center")}>
+          {guide.map && (
             <GuideMap
               map={guide.map}
               stage={event.category === "Concerts"}
@@ -3039,82 +2990,74 @@ function VenueGuideCard({
               onHover={setHovered}
               zones={zones}
             />
-            {/* Hover / active detail strip: replaces the browser tooltip and works on touch. */}
-            {shown && (
-              <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs leading-relaxed text-slate-100">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="font-semibold">{shown.tier}</span>
-                  {priceOf(shown.tier) != null && <span className="font-semibold tabular-nums text-emerald-300">${priceOf(shown.tier)}</span>}
-                </div>
-                <div className="mt-0.5 text-slate-300">{shown.where}</div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Every ticket type: range, price, 7-day trend; tap to switch or pick. */}
-        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-          {guide.seating.map((s) => {
-            const active = Boolean(tier) && s.tier === tier;
-            const p = priceOf(s.tier);
-            const tracked = tierTracked(s.tier);
-            const trend = tracked ? trendOf(s.tier) : null;
-            return (
-              <button
-                type="button"
-                key={s.tier}
-                onClick={() => pick(s.tier)}
-                onMouseEnter={() => setHovered(s.tier)}
-                onMouseLeave={() => setHovered(null)}
-                aria-pressed={active}
-                className={cn(
-                  "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left hover:bg-slate-50",
-                  active && "bg-blue-50 hover:bg-blue-50",
-                )}
-              >
-                <span className="min-w-0">
-                  <span className={cn("block truncate text-sm font-medium", active ? "text-blue-800" : "text-slate-900")}>{s.tier}</span>
-                  <span className="block truncate text-[11px] text-slate-500">
-                    {rangeOf(s.where) ?? s.where.split(/\.(?:\s|$)/)[0]}
-                    {tracked ? " · tracking" : ""}
-                  </span>
-                </span>
-                <span className="text-right">
-                  {p != null ? (
-                    <>
-                      <span className={cn("block text-sm font-semibold tabular-nums", p === cheapest ? "text-emerald-700" : "text-slate-900")}>${p}</span>
-                      {trend != null && trend !== 0 && (
-                        <span className={cn("block text-[11px]", trend < 0 ? "text-emerald-700" : "text-orange-700")}>
-                          {trend < 0 ? "▼" : "▲"} {Math.abs(trend)}% · 7d
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className={cn("text-xs font-medium", tracked ? "text-slate-500" : "text-blue-600")}>
-                      {active ? "selected" : tracked ? "tracking" : isTracked ? "+ track" : "+ pick"}
-                    </span>
+          )}
+          {/* Every ticket type: range, price, 7-day trend; tap to switch or pick. */}
+          <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {guide.seating.map((s) => {
+              const active = Boolean(tier) && s.tier === tier;
+              const p = priceOf(s.tier);
+              const tracked = tierTracked(s.tier);
+              const trend = tracked ? trendOf(s.tier) : null;
+              return (
+                <button
+                  type="button"
+                  key={s.tier}
+                  onClick={() => pick(s.tier)}
+                  onMouseEnter={() => setHovered(s.tier)}
+                  onMouseLeave={() => setHovered(null)}
+                  aria-pressed={active}
+                  className={cn(
+                    "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-1.5 text-left hover:bg-slate-50",
+                    hovered === s.tier && "bg-slate-50",
+                    active && "bg-blue-50 hover:bg-blue-50",
                   )}
-                </span>
-              </button>
-            );
-          })}
+                >
+                  <span className="min-w-0">
+                    <span className={cn("block text-sm font-medium leading-tight", active ? "text-blue-800" : "text-slate-900")}>{s.tier}</span>
+                    {/* The selected type spells out what you get; the others keep one short line. */}
+                    <span className={cn("block text-[11px] text-slate-500", !active && "truncate")}>
+                      {active ? s.where : (rangeOf(s.where) ?? s.where.split(/\.(?:\s|$)/)[0])}
+                      {tracked ? " · tracking" : ""}
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    {p != null ? (
+                      <>
+                        <span className={cn("block text-sm font-semibold tabular-nums", p === cheapest ? "text-emerald-700" : "text-slate-900")}>${p}</span>
+                        {trend != null && trend !== 0 && (
+                          <span className={cn("block text-[11px]", trend < 0 ? "text-emerald-700" : "text-orange-700")}>
+                            {trend < 0 ? "▼" : "▲"} {Math.abs(trend)}% · 7d
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className={cn("text-xs font-medium", tracked ? "text-slate-500" : "text-blue-600")}>
+                        {active ? "selected" : tracked ? "tracking" : isTracked ? "+ track" : "+ pick"}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-
-        <ul className="space-y-1 text-sm text-slate-700">
-          {notes.map((n, i) => (
-            <li key={i} className="flex gap-2">
-              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-              <span>{n}</span>
-            </li>
-          ))}
-        </ul>
+        {notes.length > 0 && (
+          <ul className="space-y-1 text-sm text-slate-700">
+            {notes.map((n, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                <span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex items-center justify-between text-xs">
           <button
             type="button"
             onClick={() => setMore((v) => !v)}
             className="text-blue-600 hover:underline"
           >
-            {more ? "Less" : `${guide.notes.length - 2} more tips`}
+            {more ? "Hide tips" : `${guide.notes.length} tips for buying here`}
           </button>
           {more && guide.sources && guide.sources.length > 0 && (
             <span className="text-slate-500">

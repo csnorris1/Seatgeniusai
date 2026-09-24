@@ -26,17 +26,15 @@ type Range = "7d" | "30d" | "all";
 // dashed "typical price" reference. When the parent passes a cheapest-window
 // estimate, the x-axis extends toward the event and the chart adds: a dashed
 // forecast tail into the estimated low, a shaded window band, a buy-by
-// marker, and event flags (the matchup being set). Stat tiles sit below.
+// marker, and event flags (the matchup being set). The legend notes the lowest logged price.
 export function PriceChart({
   readings,
   window: win,
   eventAt,
-  showTiles = true,
 }: {
   readings: Reading[];
   window?: PriceWindow | null;
   eventAt?: string | null;
-  showTiles?: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -135,19 +133,10 @@ export function PriceChart({
   };
 
   const hp = hover != null ? model.pts[hover] : null;
-  const [nowMs] = useState(() => Date.now());
-  const agoLabel = (t: string) => {
-    const min = Math.max(0, Math.round((nowMs - new Date(t).getTime()) / 60e3));
-    if (min < 60) return `${min}m ago`;
-    if (min < 48 * 60) return `${Math.round(min / 60)}h ago`;
-    return `${Math.round(min / 1440)}d ago`;
-  };
   const fmtFull = (t: string) =>
     new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
   const last = model.lastAll;
-  const weekAgo = readings.find((r) => new Date(r.t).getTime() >= new Date(last.t).getTime() - 7 * 864e5) ?? readings[0];
-  const delta7 = weekAgo && weekAgo !== last ? last.p - weekAgo.p : null;
   const lastPt = model.pts[model.pts.length - 1];
 
   return (
@@ -300,35 +289,10 @@ export function PriceChart({
         {model.tail && <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3.5 border-t-2 border-dashed border-blue-600" />estimated path</span>}
         {model.band && <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2.5 w-3.5 border border-emerald-200 bg-emerald-50" />cheapest window (est.)</span>}
         {model.buyBy && <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3.5 border-t-2 border-dashed border-amber-700" />buy-by</span>}
+        <span>
+          lowest logged <span className="font-medium text-slate-700">${Math.round(model.lowest.p)}</span> · {fmtFull(model.lowest.t)}
+        </span>
       </div>
-
-      {showTiles && (
-        <div className="mt-3 grid grid-cols-2 gap-2 @[34rem]:grid-cols-4">
-          <Tile k="Now" v={`$${Math.round(last.p)}`} s={`${delta7 != null ? `${delta7 === 0 ? "flat" : `${delta7 < 0 ? "▼" : "▲"} $${Math.abs(Math.round(delta7))}`} 7 days · ` : ""}checked ${agoLabel(last.t)}`} tone={delta7 != null && delta7 < 0 ? "good" : undefined} />
-          <Tile k="Lowest logged" v={`$${Math.round(model.lowest.p)}`} s={fmtFull(model.lowest.t)} />
-          <Tile k="Typical" v={model.typical != null ? `$${Math.round(model.typical)}` : "—"} s="average listing" />
-          {win?.low ? (
-            <Tile
-              k={win.now ? "Best price" : "Predicted low"}
-              v={win.now ? `$${Math.round(last.p)}` : win.low[0] === win.low[1] ? `$${win.low[0]}` : `$${win.low[0]}–${win.low[1]}`}
-              s={win.now ? "buy now" : `est. ${formatWindow(win)} · ${win.confidence} confidence`}
-              tone="good"
-            />
-          ) : (
-            <Tile k="Predicted low" v="—" s="needs a few more readings" />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Tile({ k, v, s, tone }: { k: string; v: string; s: string; tone?: "good" }) {
-  return (
-    <div className={cn("rounded-lg border px-3 py-2", tone === "good" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50")}>
-      <div className={cn("text-[11px] font-medium uppercase tracking-wider", tone === "good" ? "text-emerald-700" : "text-slate-500")}>{k}</div>
-      <div className={cn("mt-0.5 whitespace-nowrap text-xl font-semibold leading-6", tone === "good" ? "text-emerald-900" : "text-slate-900")}>{v}</div>
-      <div className={cn("mt-0.5 text-[11px]", tone === "good" ? "text-emerald-700" : "text-slate-500")}>{s}</div>
     </div>
   );
 }
