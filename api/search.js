@@ -209,6 +209,7 @@ exports.handler = async (event) => {
           p: r.p ?? r.lowest_price,
           avg: r.avg ?? r.average_price ?? null,
           ...(Array.isArray(r.sites) && r.sites.length ? { sites: r.sites } : {}),
+          ...(r.src ? { src: r.src } : {}),
           ...(r.tier ? { tier: r.tier } : {}),
           ...(r.matchup ? { matchup: r.matchup } : {}),
         }));
@@ -1174,7 +1175,7 @@ Keep it concise and conversational. Bold the key insights.`;
           batch.some(isMlb) ? mlbRuleText : '',
           deep ? deepRuleText : '',
         ].join('');
-        const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+        const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"src":{"site":"TickPick","url":"https://..."},"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "src" = where you saw the "p" price: "site" (marketplace name) and "url" (the exact page showing it) — required, and a price you can't point to a page for doesn't count as confirmed; "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
 
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -1251,6 +1252,13 @@ Keep it concise and conversational. Bold the key insights.`;
         if (g.avg != null) item.avg = g.avg;
         if (g.chg != null) item.chg = g.chg;
         if (sites.length) item.sites = sites;
+        // Where the headline price was seen, so an odd reading can be checked
+        // by hand. When a deep-watch site quote undercut "p", that site is it.
+        const cheapSite = siteMin != null && siteMin < p ? sites.find(s => s.p === siteMin) : null;
+        const src = cheapSite
+          ? { site: cheapSite.site, ...(cheapSite.url ? { url: cheapSite.url } : {}) }
+          : (g.src && g.src.site ? { site: String(g.src.site).slice(0, 60), ...(g.src.url ? { url: String(g.src.url).slice(0, 500) } : {}) } : null);
+        if (src) item.src = src;
         if (e.tier) item.tier = e.tier;
         if (e.datetime_local) item.event_date = e.datetime_local;
         // Who's playing (tournament sessions). A new matchup on the registry
@@ -1266,6 +1274,7 @@ Keep it concise and conversational. Bold the key insights.`;
           e.last_p = item.p;
           if (item.avg != null) e.last_avg = item.avg;
           e.last_at = nowISO;
+          if (src) e.last_src = src; else delete e.last_src;
           if (matchup && matchup !== e.matchup) { e.matchup = matchup; e.matchup_at = nowISO; }
         } catch { noprice++; }
       }
