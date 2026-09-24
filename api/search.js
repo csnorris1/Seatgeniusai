@@ -1128,6 +1128,18 @@ Keep it concise and conversational. Bold the key insights.`;
       // who is playing moves the price more than anything — capture it when
       // it shows up while pricing, never by spending a search on it.
       const sessionRuleText = ' For tournament sessions (tennis etc.): a day session and a night session on the same date are different tickets — price only the session whose number, start time and label are given, never a grounds pass or a different session. A marketplace\'s "from $X" / get-in price shown for that session number (Vivid Seats, SeatGeek, StubHub, TickPick list US Open tickets by session) counts as confirmed — report it. At Arthur Ashe Stadium the cheapest seat in any session is a Promenade seat, so the get-in price of a session IS the Promenade price. If the marketplace listing or the tournament schedule shows who is playing in that session, fill "matchup" (e.g. "Alcaraz vs Shelton; Pegula vs Navarro"); if the draw is not set yet, omit it. Do not spend a search just to find the matchup.';
+      // A logged price must come from a page that sells tickets. News stories
+      // quote stale or tournament-wide numbers ("prices drop below face"), so
+      // a reading sourced from one is dropped rather than written.
+      // Allowed: known marketplaces/sellers, any host with "ticket" in it, or
+      // an event's own site under /tickets (presidentscup.com/tickets).
+      const TICKET_HOSTS = /(^|\.)(seatgeek|stubhub|vividseats|tickpick|gametime|livenation|axs|seatpick|viagogo|mlb|nba|nfl|nhl|mls|etix|eventbrite|dice)\.(com|co|net|org|fm)$|ticket/i;
+      const isTicketPage = (url) => {
+        try {
+          const u = new URL(url);
+          return TICKET_HOSTS.test(u.hostname) || /^\/tickets?(\/|$)/i.test(u.pathname);
+        } catch { return false; }
+      };
       const isSession = (e) => Boolean(e.group) && /session\s*\d+/i.test(e.title || '');
       // MLB clubs sell primary AND their own verified resale through the team's
       // MLB.com ticket page (Tickets.com), which is often the true get-in —
@@ -1175,7 +1187,7 @@ Keep it concise and conversational. Bold the key insights.`;
           batch.some(isMlb) ? mlbRuleText : '',
           deep ? deepRuleText : '',
         ].join('');
-        const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"src":{"site":"TickPick","url":"https://..."},"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "src" = where you saw the "p" price: "site" (marketplace name) and "url" (the exact page showing it) — required, and a price you can't point to a page for doesn't count as confirmed; "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
+        const prompt = `Search the web for current resale ticket prices for these upcoming events. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"12345","p":89,"avg":140,"chg":-5,"src":{"site":"TickPick","url":"https://..."},"matchup":"A vs B","sites":[{"site":"StubHub","p":95,"url":"https://..."}]}]}. For each event by id: "p" = current cheapest all-in resale price (get-in) in whole US dollars across all marketplaces; "avg" = typical/average all-in resale price in whole dollars; "chg" = approximate 7-day percent change (number, negative if dropping); "src" = where you saw the "p" price: "site" (marketplace name) and "url" (the exact page showing it) — required, and it must be a ticket marketplace or official seller's event/listing page (SeatGeek, StubHub, Vivid Seats, TickPick, Gametime, Ticketmaster, AXS, the team or event's own ticket page). News articles, blogs, forums and price-tracker write-ups are NOT sources — a price you can only find there doesn't count; omit the id instead; "matchup" only for tournament sessions where it is known, otherwise omit it; "sites" only for events marked [DEEP], otherwise omit it. Multi-day events (tournaments, festivals) list each day as its own id: report prices for that day's tickets only — never a tournament-wide pass, never the cheapest day, never a practice-round price for a competition day.${rules} Events:\n${lines}\nUse resale marketplaces and trackers (SeatGeek, StubHub, TickPick, Vivid Seats, SeatPick, Gametime). Omit any id you can't confirm rather than guessing.`;
 
         const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -1234,6 +1246,7 @@ Keep it concise and conversational. Bold the key insights.`;
 
       // 4) One timestamped reading per due event that got a price.
       let written = 0, noprice = 0;
+      const rejected = [];
       for (const e of due) {
         // Claude may answer with the composite id or, for a lone tier, the bare one.
         const g = priced[t.readingKey(e.id, e.tier)]
@@ -1258,7 +1271,8 @@ Keep it concise and conversational. Bold the key insights.`;
         const src = cheapSite
           ? { site: cheapSite.site, ...(cheapSite.url ? { url: cheapSite.url } : {}) }
           : (g.src && g.src.site ? { site: String(g.src.site).slice(0, 60), ...(g.src.url ? { url: String(g.src.url).slice(0, 500) } : {}) } : null);
-        if (src) item.src = src;
+        if (!src || !src.url || !isTicketPage(src.url)) { rejected.push({ id: item.event_id, p: item.p, src: src ? src.url || src.site : null }); noprice++; continue; }
+        item.src = src;
         if (e.tier) item.tier = e.tier;
         if (e.datetime_local) item.event_date = e.datetime_local;
         // Who's playing (tournament sessions). A new matchup on the registry
@@ -1274,7 +1288,7 @@ Keep it concise and conversational. Bold the key insights.`;
           e.last_p = item.p;
           if (item.avg != null) e.last_avg = item.avg;
           e.last_at = nowISO;
-          if (src) e.last_src = src; else delete e.last_src;
+          e.last_src = src;
           if (matchup && matchup !== e.matchup) { e.matchup = matchup; e.matchup_at = nowISO; }
         } catch { noprice++; }
       }
@@ -1286,7 +1300,7 @@ Keep it concise and conversational. Bold the key insights.`;
         try { alerts = await alertTools(t).checkAlerts(upcoming, nowISO); }
         catch (err) { alerts = { checked: 0, sent: 0, errors: [err && err.message ? err.message : 'alert check failed'] }; }
       }
-      await saveStatus({ due: due.length, logged: written, no_price: noprice, batches: batchStatus, ...(alerts ? { alerts } : {}), ...(errors.length ? { errors } : {}) });
+      await saveStatus({ due: due.length, logged: written, no_price: noprice, ...(rejected.length ? { rejected } : {}), batches: batchStatus, ...(alerts ? { alerts } : {}), ...(errors.length ? { errors } : {}) });
 
       return respond(200, { logged: written, due: due.length, batches: batches.length, tracked: upcoming.length, no_price: noprice, at: nowISO, ...(alerts ? { alerts } : {}), ...(errors.length ? { errors } : {}) });
     }
