@@ -126,11 +126,30 @@ type LocalEvent = {
   image?: string | null;
 };
 
-// Only these categories are surfaced in the "This Weekend in Chicago" view,
-// in this display order. The `local` action returns more (theater, comedy…)
-// but the product scope here is sporting events + concerts.
-const LOCAL_CATEGORIES = ["Sports", "Concerts"] as const;
+// Categories surfaced in the Cities view, in this display order.
+const LOCAL_CATEGORIES = ["Sports", "Concerts", "Theater", "Comedy", "Arts"] as const;
 type LocalCategory = (typeof LOCAL_CATEGORIES)[number];
+
+// What the Cities tab looks up: a city plus an optional trip (from/to,
+// YYYY-MM-DD). No dates = the next 7 days. Remembered on this device.
+type CityQuery = { city: string; from: string; to: string };
+const CITY_KEY = "sg-city";
+const DEFAULT_CITY: CityQuery = { city: "Chicago, IL", from: "", to: "" };
+function readCityQuery(): CityQuery {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CITY_KEY) || "null") as CityQuery | null;
+    if (!saved?.city) return DEFAULT_CITY;
+    // A trip that's over falls back to the next 7 days in the same city.
+    const today = new Date().toLocaleDateString("en-CA");
+    return (saved.to || saved.from) && (saved.to || saved.from) < today
+      ? { city: saved.city, from: "", to: "" }
+      : { ...DEFAULT_CITY, ...saved };
+  } catch {
+    return DEFAULT_CITY;
+  }
+}
+// Tab label: "New York, NY" → "New York".
+const cityShort = (city: string) => city.split(",")[0].trim() || "City";
 
 const categoryMeta: Record<string, { label: string; chip: string; accent: string }> = {
   Sports: {
@@ -470,7 +489,9 @@ export default function SeatGenius() {
   const [trackBusy, setTrackBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // Local (This Weekend in Chicago)
+  // Cities tab: events in one city over the next week or a trip's dates.
+  const [cityQuery, setCityQuery] = useState<CityQuery>(readCityQuery);
+  const [cityFound, setCityFound] = useState<string | null>(null);
   const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
   const [loadingLocal, setLoadingLocal] = useState(false);
   const [localLoaded, setLocalLoaded] = useState(false);
@@ -574,20 +595,39 @@ export default function SeatGenius() {
     if (!trackedLoaded) loadTracked();
   }, [view, trackedLoaded, loadTracked]);
 
-  // Lazily load Chicago-area events the first time the user opens that tab.
+  // Lazily load the city's events the first time the user opens that tab,
+  // and again whenever they look up a different city or dates.
   useEffect(() => {
     if (view !== "local" || localLoaded) return;
     setLoadingLocal(true);
     setLocalError(null);
-    fetch(`${AWS_URL}/search?action=local`)
+    const { city, from, to } = cityQuery;
+    const qs = new URLSearchParams({ action: "local", city, per_page: "100" });
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    fetch(`${AWS_URL}/search?${qs}`)
       .then((res) => res.json())
-      .then((data) => setLocalEvents(data.events || []))
-      .catch(() => setLocalError("Couldn't load Chicago events. Try again."))
+      .then((data) => {
+        setLocalEvents(data.events || []);
+        setCityFound(data.area?.city || null);
+        if (data.city_not_found) setLocalError(`Couldn't find a city called "${city}". Try "Austin, TX".`);
+      })
+      .catch(() => setLocalError(`Couldn't load events in ${cityShort(city)}. Try again.`))
       .finally(() => {
         setLoadingLocal(false);
         setLocalLoaded(true);
       });
-  }, [view, localLoaded]);
+  }, [view, localLoaded, cityQuery]);
+
+  const lookUpCity = (q: CityQuery) => {
+    setCityQuery(q);
+    setLocalLoaded(false);
+    try {
+      localStorage.setItem(CITY_KEY, JSON.stringify(q));
+    } catch {
+      // private mode: the city just isn't remembered
+    }
+  };
 
   const searchSeq = useRef(0);
   const runSearch = async (q: string) => {
@@ -964,7 +1004,7 @@ export default function SeatGenius() {
               [
                 ["discover", "Discover"],
                 ["watch", "Price Watch"],
-                ["local", "Chicago"],
+                ["local", cityShort(cityFound || cityQuery.city)],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1037,6 +1077,9 @@ export default function SeatGenius() {
                 events={localEvents}
                 loading={loadingLocal}
                 error={localError}
+                query={cityQuery}
+                cityFound={cityFound}
+                onLookUp={lookUpCity}
                 {...listProps}
               />
             )}
@@ -1064,7 +1107,7 @@ export default function SeatGenius() {
             onClose={resetToEvents}
           />
         ) : (
-          <MobileTabBar view={view} onChange={setView} watchCount={new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size} />
+          <MobileTabBar view={view} onChange={setView} cityLabel={cityShort(cityFound || cityQuery.city)} watchCount={new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size} />
         ))}
     </div>
   );
@@ -1132,16 +1175,18 @@ function FirstVisitTour() {
 function MobileTabBar({
   view,
   onChange,
+  cityLabel,
   watchCount,
 }: {
   view: "discover" | "watch" | "local";
   onChange: (v: "discover" | "watch" | "local") => void;
+  cityLabel: string;
   watchCount: number;
 }) {
   const tabs = [
     { key: "discover" as const, label: "Discover", Icon: Search },
     { key: "watch" as const, label: "Price Watch", Icon: BellRing },
-    { key: "local" as const, label: "Chicago", Icon: MapPin },
+    { key: "local" as const, label: cityLabel, Icon: MapPin },
   ];
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 flex border-t border-slate-200 bg-white/95 pb-[max(env(safe-area-inset-bottom),8px)] backdrop-blur-md" aria-label="Sections">
@@ -1993,17 +2038,37 @@ function WatchView({
   );
 }
 
+// "2026-11-03" → "Tue, Nov 3" (parsed as a local date, not UTC midnight).
+function formatTripDay(day: string) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
 function LocalEventsView({
   events,
   loading,
   error,
+  query,
+  cityFound,
+  onLookUp,
   ...list
 }: ListProps & {
   events: LocalEvent[];
   loading: boolean;
   error: string | null;
+  query: CityQuery;
+  cityFound: string | null;
+  onLookUp: (q: CityQuery) => void;
 }) {
   const [filter, setFilter] = useState<"All" | LocalCategory>("All");
+  const [draft, setDraft] = useState<CityQuery>(query);
+  const place = cityFound || query.city;
+  const when =
+    query.from && query.to
+      ? `${formatTripDay(query.from)} – ${formatTripDay(query.to)}`
+      : query.from
+        ? `the week from ${formatTripDay(query.from)}`
+        : "the next 7 days";
 
   // Keep only the in-scope categories (sports + concerts), then group.
   const inScope = useMemo(
@@ -2015,8 +2080,10 @@ function LocalEventsView({
   );
 
   const grouped = useMemo(() => {
-    const g: Record<LocalCategory, LocalEvent[]> = { Sports: [], Concerts: [] };
+    const g: Record<LocalCategory, LocalEvent[]> = { Sports: [], Concerts: [], Theater: [], Comedy: [], Arts: [] };
     for (const e of inScope) g[e.category as LocalCategory].push(e);
+    // The API ranks a city search by popularity; show each group by date.
+    for (const list of Object.values(g)) list.sort((a, b) => a.datetime_local.localeCompare(b.datetime_local));
     return g;
   }, [inScope]);
 
@@ -2026,23 +2093,66 @@ function LocalEventsView({
 
   return (
     <>
-      <div className="mb-5">
-        <h2 className="text-xl text-slate-900">This Weekend in Chicago</h2>
+      <form
+        className="mb-4 rounded-lg border border-slate-200 bg-white p-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!draft.city.trim()) return;
+          setFilter("All");
+          onLookUp({ ...draft, city: draft.city.trim() });
+        }}
+      >
+        <label className="relative block">
+          <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input
+            value={draft.city}
+            onChange={(e) => setDraft({ ...draft, city: e.target.value })}
+            placeholder="City, e.g. NYC or Austin, TX"
+            aria-label="City"
+            className="h-9 w-full rounded-md border border-slate-300 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+          />
+        </label>
+        <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+          <input
+            type="date"
+            value={draft.from}
+            onChange={(e) => setDraft({ ...draft, from: e.target.value, to: draft.to && draft.to < e.target.value ? e.target.value : draft.to })}
+            aria-label="From"
+            className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 px-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+          />
+          to
+          <input
+            type="date"
+            value={draft.to}
+            min={draft.from || undefined}
+            onChange={(e) => setDraft({ ...draft, to: e.target.value })}
+            aria-label="To"
+            className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 px-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none"
+          />
+          <Button type="submit" disabled={loading || !draft.city.trim()} className="h-9 bg-blue-600 text-white hover:bg-blue-700">
+            Go
+          </Button>
+        </div>
+        <p className="mt-1.5 text-[11px] text-slate-500">Leave the dates empty for the next 7 days.</p>
+      </form>
+
+      <div className="mb-4">
+        <h2 className="text-xl text-slate-900">Events in {cityShort(place)}</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Sporting events and concerts happening in the city over the next 7 days
+          Sports, concerts, theater and comedy, {when}
         </p>
       </div>
 
       {loading && (
         <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-          Finding events around Chicago…
+          Finding events around {cityShort(place)}…
         </div>
       )}
 
       {!loading && !error && inScope.length === 0 && (
         <div className="rounded-lg border border-slate-200 bg-white px-5 py-8 text-center text-sm italic text-slate-500">
-          No sporting events or concerts found in the next 7 days.
+          No events found in {cityShort(place)} for {when}.
         </div>
       )}
 
