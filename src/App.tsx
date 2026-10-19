@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   BellPlus,
+  BedDouble,
   BellRing,
   Calendar,
   ChevronRight,
@@ -2032,7 +2033,94 @@ function WatchView({
           )}
         </div>
       )}
+
+      <HotelWatch />
     </>
+  );
+}
+
+// Hotel watch (test): hotels tracked for a stay's dates, priced every ~6h by
+// the sweep from Google Hotels. Read-only for now; hotels are added through
+// the API (`hotel_track`).
+type WatchedHotel = {
+  id: string;
+  name: string;
+  area?: string | null;
+  address?: string | null;
+  check_in: string;
+  check_out: string;
+  last_p?: number | null;
+  last_total?: number | null;
+  last_at?: string | null;
+  last_src?: { site: string; url?: string } | null;
+  readings: Reading[];
+};
+
+function HotelWatch() {
+  const [hotels, setHotels] = useState<WatchedHotel[] | null>(null);
+  const now = useNow();
+  useEffect(() => {
+    fetch(`${AWS_URL}/search?action=hotels`)
+      .then((res) => res.json())
+      .then((data) => setHotels(data.hotels || []))
+      .catch(() => setHotels([]));
+  }, []);
+  if (!hotels || hotels.length === 0) return null;
+  // By stay, cheapest first within a stay.
+  const sorted = [...hotels].sort((a, b) => a.check_in.localeCompare(b.check_in) || (a.last_p ?? Infinity) - (b.last_p ?? Infinity));
+  return (
+    <section className="mt-6">
+      <div className="mb-3 flex items-center gap-2">
+        <BedDouble className="h-5 w-5 text-blue-600" />
+        <h3 className="text-lg text-slate-900">Hotels</h3>
+        <span className="text-sm text-slate-500">nightly rate before taxes · checked every 6 h</span>
+      </div>
+      <div className="grid gap-3">
+        {sorted.map((h) => {
+          const nights = Math.round((Date.parse(h.check_out) - Date.parse(h.check_in)) / 864e5);
+          const first = h.readings[0]?.p;
+          const low = h.readings.length ? Math.min(...h.readings.map((r) => r.p)) : null;
+          const diff = first != null && h.last_p != null ? h.last_p - first : null;
+          const agoH = h.last_at ? Math.max(0, Math.round((now - new Date(h.last_at).getTime()) / 36e5)) : null;
+          return (
+            <Card key={h.id} className="border-slate-200 bg-white">
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-base text-slate-900">{h.name}</div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    {formatTripDay(h.check_in)} – {formatTripDay(h.check_out)} · {nights} {nights === 1 ? "night" : "nights"}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-500">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{h.address || h.area}</span>
+                  </div>
+                  <div className="mt-1.5 text-xs text-slate-500">
+                    {h.readings.length < 2
+                      ? "First reading in. The trend shows after a few more."
+                      : `${diff === 0 ? "No change" : `${diff! < 0 ? "Down" : "Up"} $${Math.abs(diff!)}`} since tracking began · lowest seen $${low}`}
+                    {agoH != null && ` · checked ${agoH === 0 ? "just now" : `${agoH} h ago`}`}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <div className="text-xl font-semibold text-slate-900">
+                    {h.last_p != null ? `$${h.last_p.toLocaleString()}` : "—"}
+                    <span className="text-xs font-normal text-slate-500"> /night</span>
+                  </div>
+                  {h.last_total != null && <div className="text-xs text-slate-500">${h.last_total.toLocaleString()} total w/ taxes</div>}
+                  {h.readings.length >= 2 && <Sparkline readings={h.readings} />}
+                  {h.last_src?.url && (
+                    <a href={h.last_src.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                      See rates <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
