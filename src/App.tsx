@@ -148,7 +148,7 @@ function readCityQuery(): CityQuery {
     return DEFAULT_CITY;
   }
 }
-// Tab label: "New York, NY" → "New York".
+// Heading: "New York, NY" → "New York".
 const cityShort = (city: string) => city.split(",")[0].trim() || "City";
 
 const categoryMeta: Record<string, { label: string; chip: string; accent: string }> = {
@@ -1004,7 +1004,7 @@ export default function SeatGenius() {
               [
                 ["discover", "Discover"],
                 ["watch", "Price Watch"],
-                ["local", cityShort(cityFound || cityQuery.city)],
+                ["local", "Cities"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1107,7 +1107,7 @@ export default function SeatGenius() {
             onClose={resetToEvents}
           />
         ) : (
-          <MobileTabBar view={view} onChange={setView} cityLabel={cityShort(cityFound || cityQuery.city)} watchCount={new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size} />
+          <MobileTabBar view={view} onChange={setView} watchCount={new Set(tracked.map((t) => (t.group ? `g:${t.group}` : String(t.id)))).size} />
         ))}
     </div>
   );
@@ -1175,18 +1175,16 @@ function FirstVisitTour() {
 function MobileTabBar({
   view,
   onChange,
-  cityLabel,
   watchCount,
 }: {
   view: "discover" | "watch" | "local";
   onChange: (v: "discover" | "watch" | "local") => void;
-  cityLabel: string;
   watchCount: number;
 }) {
   const tabs = [
     { key: "discover" as const, label: "Discover", Icon: Search },
     { key: "watch" as const, label: "Price Watch", Icon: BellRing },
-    { key: "local" as const, label: cityLabel, Icon: MapPin },
+    { key: "local" as const, label: "Cities", Icon: MapPin },
   ];
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 flex border-t border-slate-200 bg-white/95 pb-[max(env(safe-area-inset-bottom),8px)] backdrop-blur-md" aria-label="Sections">
