@@ -230,9 +230,10 @@ exports.handler = async (event) => {
   };
 
   // Hotel watch (test, 2026-10-19): a few hotels for one trip's dates, priced
-  // once a day by the sweep so we can see how room rates move toward a stay.
+  // every ~6h by the sweep so we can see how room rates move toward a stay.
   // Registry: PK 'HOTELS' / SK 'LIST' (`hotels_json`); readings under PK
-  // `hotel#<id>` with `p` = cheapest nightly rate before taxes, `src` = where.
+  // `hotel#<id>` with `p` = cheapest nightly rate before taxes, `total` = the
+  // stay with taxes + fees, `src` = the Google Hotels search it came from.
   const hotelTools = (t) => {
     const { GetItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
     const getHotels = async () => {
@@ -253,21 +254,45 @@ exports.handler = async (event) => {
         ExpressionAttributeValues: t.marshall({ ':id': `hotel#${id}` }),
       }));
       return (out.Items || []).map(it => t.unmarshall(it))
-        .map(r => ({ t: r.date, p: r.p, ...(r.src ? { src: r.src } : {}) }))
+        .map(r => ({ t: r.date, p: r.p, ...(r.total ? { total: r.total } : {}) }))
         .sort((a, b) => (a.t < b.t ? -1 : 1));
     };
-    // A rate counts only from a booking page: the big booking sites or the
-    // hotel's own site (host containing a word of its name, e.g. sohogrand).
-    const BOOKING_HOSTS = /(^|\.)(booking|expedia|hotels|kayak|priceline|trivago|tripadvisor|orbitz|travelocity|agoda|hotwire|marriott|hilton|hyatt|ihg)\.(com|co\.uk|net)$|(^|\.)google\.com$/i;
-    const isBookingPage = (url, name) => {
-      try {
-        const host = new URL(url).hostname.replace(/^www\./, '');
-        const words = (name || '').toLowerCase().replace(/\bhotel\b|\bthe\b/g, '').split(/[^a-z]+/).filter(w => w.length >= 4);
-        return BOOKING_HOSTS.test(host) || words.some(w => host.includes(w));
-      } catch { return false; }
+    // Rates come from Google Hotels: its search page carries the hotel's
+    // cheapest nightly rate (across booking sites) for the dates in plain
+    // HTML. No key and no Claude call. The dates ride in `ts`, a protobuf
+    // blob: check-in/out as {year, month, day} plus the night count.
+    const googleTs = (checkIn, checkOut, nights) => {
+      const day = (iso) => {
+        const [y, m, d] = iso.split('-').map(Number);
+        return [0x08, (y & 0x7f) | 0x80, y >> 7, 0x10, m, 0x18, d];
+      };
+      const hex = (h) => h.match(/../g).map(x => parseInt(x, 16));
+      const bytes = [...hex('0801120a0a0208030a02080310001a200a021a00121a1214'), 0x0a, 0x07, ...day(checkIn), 0x12, 0x07, ...day(checkOut), 0x18, nights, ...hex('320210002a090a053a035553441a00')];
+      return Buffer.from(bytes).toString('base64url');
     };
-    // Price every hotel not priced in the last ~day, in one Claude call.
-    const priceHotels = async (now, apiKey, force) => {
+    const googleHotelRate = async (h) => {
+      const nights = Math.round((Date.parse(h.check_out) - Date.parse(h.check_in)) / 864e5);
+      const qs = new URLSearchParams({ q: [h.name, h.area].filter(Boolean).join(' '), hl: 'en', gl: 'us', curr: 'USD', ts: googleTs(h.check_in, h.check_out, nights) });
+      const url = `https://www.google.com/travel/search?${qs}`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36', 'Accept-Language': 'en-US' } });
+      if (!res.ok) throw new Error(`Google Hotels ${res.status}`);
+      const text = (await res.text())
+        .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, '')
+        .replace(/<[^>]+>/g, ' | ')
+        .replace(/&amp;/g, '&').replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .replace(/( ?\| ?)+/g, ' | ');
+      // "… 310 W Broadway, New York, NY 10013 | • | (212) 965-3000 | $878 |
+      //  $878 nightly | $3,034 total | 3 nights with taxes + fees | $878 | Nov 3 – 6"
+      const m = text.match(/\$([\d,]+) nightly \| \$([\d,]+) total \| (\d+) nights?/);
+      if (!m) return { url, note: 'no rate on page' };
+      if (Number(m[3]) !== nights) return { url, note: `rate is for ${m[3]} nights, not ${nights}` };
+      // The street address just before the rate confirms which hotel matched.
+      const addr = text.slice(Math.max(0, m.index - 400), m.index).match(/\| ([^|]+, [A-Z]{2} \d{5}) \|/);
+      return { url, p: Number(m[1].replace(/,/g, '')), total: Number(m[2].replace(/,/g, '')), address: addr ? addr[1].trim() : null };
+    };
+    // Price every hotel not priced in the last ~6h (free, so more often than tickets).
+    const priceHotels = async (now, force) => {
       const nowISO = now.toISOString();
       const today = nowISO.slice(0, 10);
       const all = await getHotels();
@@ -275,51 +300,27 @@ exports.handler = async (event) => {
       const due = list.filter(h => {
         if (force) return true;
         const ref = [h.tried_at, h.last_at].filter(Boolean).sort().pop();
-        return !ref || (now.getTime() - new Date(ref).getTime()) / 3600000 >= 23.5;
-      }).slice(0, 6);
+        return !ref || (now.getTime() - new Date(ref).getTime()) / 3600000 >= 5.5;
+      });
       if (!due.length) {
         if (list.length !== all.length) await putHotels(list);
         return { due: 0 };
       }
-      const lines = due.map(h => `- id ${h.id}: ${h.name}${h.area ? `, ${h.area}` : ''} — check in ${h.check_in}, check out ${h.check_out}, 1 room, 2 adults`).join('\n');
-      const prompt = `Search the web for the current price of a room at each of these hotels for the exact dates given. Today is ${now.toDateString()}. Return ONLY a JSON object — no markdown, no prose — shaped {"prices":[{"id":"abc","p":289,"room":"Standard King","src":{"site":"Booking.com","url":"https://..."}}]}. For each hotel by id: "p" = the cheapest available nightly rate for those dates in whole US dollars, before taxes and fees (the per-night price a booking site shows); "room" = the room type that price is for; "src" = where you saw it: "site" and "url" (the hotel's page on that booking site, or the hotel's own booking page) — required. The price must be for these dates, not a generic "from" price, a different month, or a price quoted in a news story or blog. Omit any hotel you can't confirm rather than guessing.\nHotels:\n${lines}`;
-      let prices = [], error = null;
-      try {
-        const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 4000,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        });
-        const aiData = await aiRes.json();
-        if (aiData && aiData.error) throw new Error(aiData.error.message || 'API error');
-        const text = (aiData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').replace(/```(?:json)?/gi, '');
-        const m = text.match(/\{[\s\S]*"prices"[\s\S]*\}/);
-        prices = m ? (JSON.parse(m[0]).prices || []) : [];
-        if (!m) error = `no prices JSON: ${text.slice(0, 200)}`;
-      } catch (err) { error = err && err.message ? err.message : 'hotel pricing failed'; }
-
       let written = 0;
-      const rejected = [];
+      const misses = [];
       for (const h of due) {
         h.tried_at = nowISO;
-        const g = prices.find(x => x && String(x.id) === String(h.id));
-        const p = g && g.p != null ? Math.round(Number(g.p)) : NaN;
-        if (!Number.isFinite(p) || p <= 0) continue;
-        const src = g.src && g.src.url ? { site: String(g.src.site || '').slice(0, 60), url: String(g.src.url).slice(0, 500) } : null;
-        if (!src || !isBookingPage(src.url, h.name)) { rejected.push({ id: h.id, p, src: src ? src.url : null }); continue; }
-        const item = { event_id: `hotel#${h.id}`, date: nowISO, p, src, name: h.name, check_in: h.check_in, check_out: h.check_out };
-        if (g.room) item.room = String(g.room).slice(0, 80);
+        let r;
+        try { r = await googleHotelRate(h); } catch (err) { misses.push({ id: h.id, note: err.message }); continue; }
+        if (!r.p) { misses.push({ id: h.id, note: r.note }); continue; }
+        const src = { site: 'Google Hotels', url: r.url.slice(0, 500) };
+        const item = { event_id: `hotel#${h.id}`, date: nowISO, p: r.p, total: r.total, src, name: h.name, address: r.address, check_in: h.check_in, check_out: h.check_out };
         await t.ddb.send(new t.PutItemCommand({ TableName: t.TABLE, Item: t.marshall(item, { removeUndefinedValues: true }) }));
-        h.last_p = p; h.last_at = nowISO; h.last_src = src;
+        h.last_p = r.p; h.last_total = r.total; h.last_at = nowISO; h.last_src = src; h.address = r.address;
         written++;
       }
       await putHotels(list);
-      return { due: due.length, logged: written, ...(rejected.length ? { rejected } : {}), ...(error ? { error } : {}) };
+      return { due: due.length, logged: written, ...(misses.length ? { misses } : {}) };
     };
     return { getHotels, putHotels, getHotelHistory, priceHotels };
   };
@@ -1243,11 +1244,11 @@ Keep it concise and conversational. Bold the key insights.`;
         .sort((a, b) => (overdue(b) - overdue(a)) || (hoursOut(a) - hoursOut(b)) || String(a.id).localeCompare(String(b.id)))
         .slice(0, limit);
 
-      // Hotel watch rides along: at most one extra Claude call a day, and
-      // only while a watched stay is still ahead. Manual `hotels=1` forces it.
+      // Hotel watch rides along (Google Hotels, no Claude call) while a watched
+      // stay is still ahead. Manual `hotels=1` forces it.
       let hotels = null;
       if (!params.group && !params.event_id) {
-        try { hotels = await hotelTools(t).priceHotels(now, ANTHROPIC_API_KEY, params.hotels === '1'); }
+        try { hotels = await hotelTools(t).priceHotels(now, params.hotels === '1'); }
         catch (err) { hotels = { error: err && err.message ? err.message : 'hotel sweep failed' }; }
         if (hotels && !hotels.due && !hotels.error) hotels = null;
         if (hotels) status.hotels = hotels;
