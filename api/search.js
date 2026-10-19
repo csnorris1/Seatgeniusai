@@ -1436,20 +1436,42 @@ Keep it concise and conversational. Bold the key insights.`;
     // with venue, time, and a buy URL. Price stats are included when SeatGeek
     // exposes them (often null on the free tier — same limitation as `events`).
     if (action === 'local') {
-      const lat = params.lat || '41.8781';   // Chicago city center
-      const lon = params.lon || '-87.6298';
+      let lat = params.lat || '41.8781';   // Chicago city center
+      let lon = params.lon || '-87.6298';
+      let cityLabel = params.lat ? null : 'Chicago, IL';
+      // `city=Nashville` or `city=Austin, TX`: centre the search on the city's
+      // highest-scoring SeatGeek venue (SeatGeek has no geocoder), so the
+      // radius still picks up suburban arenas and amphitheaters.
+      if (params.city) {
+        // Common nicknames SeatGeek's city filter wouldn't match.
+        const ALIASES = { nyc: 'New York, NY', 'new york city': 'New York, NY', la: 'Los Angeles, CA',
+          sf: 'San Francisco, CA', dc: 'Washington, DC', philly: 'Philadelphia, PA', vegas: 'Las Vegas, NV' };
+        const city = ALIASES[params.city.trim().toLowerCase()] || params.city;
+        const [name, st] = city.split(',').map(s => s.trim());
+        let vUrl = `https://api.seatgeek.com/2/venues?city=${encodeURIComponent(name)}&sort=score.desc&per_page=1&client_id=${SEATGEEK_CLIENT_ID}`;
+        if (st) vUrl += `&state=${encodeURIComponent(st)}`;
+        const venue = ((await (await fetch(vUrl)).json()).venues || [])[0];
+        if (!venue?.location) return respond(200, { events: [], total: 0, city_not_found: params.city });
+        lat = String(venue.location.lat);
+        lon = String(venue.location.lon);
+        cityLabel = `${venue.city}${venue.state ? `, ${venue.state}` : ''}`;
+      }
       const range = params.range || '15mi';   // city core
       const days = Math.min(Math.max(parseInt(params.days, 10) || 7, 1), 31);
       const perPage = Math.min(Math.max(parseInt(params.per_page, 10) || 60, 1), 100);
 
-      const start = new Date();
-      const end = new Date(Date.now() + days * 864e5);
-      const gte = start.toISOString().slice(0, 10);
-      const lte = end.toISOString().slice(0, 10);
+      // A trip's dates (`from`/`to`, YYYY-MM-DD) override the next-N-days window.
+      const isDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+      const gte = isDay(params.from) ? params.from : new Date().toISOString().slice(0, 10);
+      const lte = isDay(params.to) && params.to >= gte
+        ? params.to
+        : new Date(Date.parse(gte) + days * 864e5).toISOString().slice(0, 10);
 
       let url =
         `https://api.seatgeek.com/2/events?lat=${lat}&lon=${lon}&range=${encodeURIComponent(range)}` +
-        `&per_page=${perPage}&sort=datetime_local.asc` +
+        // A city/trip search can match hundreds of events (NYC: 300+ in four
+        // days); take the most popular so the cap keeps the headliners.
+        `&per_page=${perPage}&sort=${params.city ? 'score.desc' : 'datetime_local.asc'}` +
         `&datetime_local.gte=${gte}T00:00:00&datetime_local.lte=${lte}T23:59:59` +
         `&client_id=${SEATGEEK_CLIENT_ID}`;
       if (params.q) url += `&q=${encodeURIComponent(params.q)}`;
@@ -1506,7 +1528,7 @@ Keep it concise and conversational. Bold the key insights.`;
       return respond(200, {
         events,
         total: data.meta?.total ?? events.length,
-        area: { lat, lon, range },
+        area: { lat, lon, range, city: cityLabel },
         range_days: days,
         from: gte,
         to: lte,
